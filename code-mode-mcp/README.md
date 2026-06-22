@@ -98,6 +98,29 @@ Hidden tools are removed from every listing (`list_tools`, `search_tools`) and f
 
 The same fields work with the `register_manual` MCP tool for manuals registered at runtime.
 
+## Building exclusion configs
+
+Two helpers turn a live `.utcp_config.json` into a config with the exclusion fields filled in. Both register every manual and **discover its real tools** (the config only lists manuals; tool names are only known after registration), so they may launch your MCP/CLI manuals — exactly like running the server. The source path is resolved as: CLI arg → `.env` (`UTCP_CONFIG_PATH` / `UTCP_CONFIG_FILE`) → environment variable.
+
+### Interactive dashboard
+
+```bash
+npm run config-builder -- /path/to/.utcp_config.json
+```
+
+Opens a local dark-mode dashboard in your browser to choose, per manual, which tools are exposed, then download / copy / save a named config. Features: regex search across tool names and descriptions, filter by decision / provider type / manual, per-manual and bulk expose / hide, the `default_disabled` allowlist toggle and global presets, mark-a-manual-for-removal (drops it from the output), manual ordering (config / alphabetical / drag-to-reorder), a resizable syntax-highlighted JSON preview, and a live save to `./configs/`. Disabled manuals are force-enabled for discovery only — the generated config preserves their original `enabled` / `disabled` settings.
+
+### Non-interactive generator
+
+```bash
+npm run generate-exclusion-configs -- /path/to/.utcp_config.json
+```
+
+Writes two ready-to-edit configs to `./configs/`:
+
+- `all-tools-excluded.utcp_config.json` — every manual gets an `exclude_tools` array listing all of its tools (full denylist).
+- `all-tools-included-default-disabled.utcp_config.json` — every manual gets `default_disabled: true` plus an `include_tools` array listing all of its tools (allowlist form). Prune either to taste.
+
 ## Exposed MCP Tools
 
 - `register_manual` - register a UTCP manual call template
