@@ -48,7 +48,7 @@ const TOOL_NAMES = [
   "call_tool_chain"
 ] as const;
 
-const DEFAULT_LIST_TOOLS_LIMIT = 300;
+const DEFAULT_LIST_TOOLS_LIMIT = 100;
 const MAX_LIST_TOOLS_LIMIT = 500;
 
 let utcpClient: CodeModeUtcpClient | null = null;
