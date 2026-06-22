@@ -228,7 +228,10 @@ async function findToolWithAliases(
   return null;
 }
 
-export function createCleanToolNameClient(baseClient: CodeModeUtcpClient): CodeModeMcpClientLike {
+export function createCleanToolNameClient(
+  baseClient: CodeModeUtcpClient,
+  registry: ToolExclusionRegistry = new Map()
+): CodeModeMcpClientLike {
   const client = baseClient as CodeModeUtcpClient & {
     callTool(toolName: string, toolArgs: unknown): Promise<unknown>;
     __findToolByName?: (name: string) => Promise<{ tool: Tool; utcpName: string } | null>;
@@ -239,38 +242,58 @@ export function createCleanToolNameClient(baseClient: CodeModeUtcpClient): CodeM
   const callCanonicalTool = client.callTool.bind(client);
   const getCanonicalRequiredVariables = client.getRequiredVariablesForRegisteredTool.bind(client);
 
-  const getAliasIndex = async () => buildToolAliasIndex(await getCanonicalTools());
+  const isExcluded = (toolName: string): boolean =>
+    isToolExcluded(toolName, utcpNameToTsInterfaceName(toolName), registry);
+
+  const getVisibleCanonicalTools = async (): Promise<Tool[]> => {
+    const tools = await getCanonicalTools();
+    return tools.filter((tool) => !isExcluded(tool.name));
+  };
+
+  const getAliasIndex = async () => buildToolAliasIndex(await getVisibleCanonicalTools());
 
   const resolveToolName = async (toolName: string): Promise<string> => {
     const index = await getAliasIndex();
     return index.aliasToCanonical.get(toolName) ?? toolName;
   };
 
+  const assertNotExcluded = (requestedName: string, canonicalName: string): void => {
+    if (isExcluded(canonicalName)) {
+      throw new Error(`Tool '${requestedName}' is disabled by the manual exclusion config.`);
+    }
+  };
+
   client.getTools = async () => {
-    const tools = await getCanonicalTools();
+    const tools = await getVisibleCanonicalTools();
     const index = buildToolAliasIndex(tools);
     return tools.map((tool) => exposeToolAlias(tool, index));
   };
 
   client.searchTools = async (taskDescription: string, limit?: number) => {
-    const [matchedTools, allTools] = await Promise.all([
+    const [matchedTools, visibleTools] = await Promise.all([
       searchCanonicalTools(taskDescription, limit),
-      getCanonicalTools()
+      getVisibleCanonicalTools()
     ]);
-    const index = buildToolAliasIndex(allTools);
-    return matchedTools.map((tool) => exposeToolAlias(tool, index));
+    const index = buildToolAliasIndex(visibleTools);
+    return matchedTools
+      .filter((tool) => !isExcluded(tool.name))
+      .map((tool) => exposeToolAlias(tool, index));
   };
 
   client.callTool = async (toolName: string, toolArgs: unknown) => {
-    return callCanonicalTool(await resolveToolName(toolName), toolArgs);
+    const canonical = await resolveToolName(toolName);
+    assertNotExcluded(toolName, canonical);
+    return callCanonicalTool(canonical, toolArgs);
   };
 
   client.getRequiredVariablesForRegisteredTool = async (toolName: string) => {
-    return getCanonicalRequiredVariables(await resolveToolName(toolName));
+    const canonical = await resolveToolName(toolName);
+    assertNotExcluded(toolName, canonical);
+    return getCanonicalRequiredVariables(canonical);
   };
 
   client.__findToolByName = async (name: string) => {
-    return findToolWithAliases(await getCanonicalTools(), name);
+    return findToolWithAliases(await getVisibleCanonicalTools(), name);
   };
 
   return client;

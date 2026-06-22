@@ -124,3 +124,95 @@ test("buildExclusionRegistryFromConfig tolerates missing manual_call_templates",
   assert.equal(registry.size, 0);
   assert.deepEqual(sanitizedConfig, {});
 });
+
+import { createCleanToolNameClient } from "../dist/index.js";
+
+function makeBaseClient(tools, calls) {
+  return {
+    async callTool(toolName, toolArgs) {
+      calls.push({ kind: "callTool", toolName, toolArgs });
+      return { ok: true };
+    },
+    async callToolChain() {
+      return { result: { ok: true }, logs: [] };
+    },
+    async deregisterManual() {
+      return true;
+    },
+    async getRequiredVariablesForRegisteredTool(toolName) {
+      calls.push({ kind: "getRequiredVariablesForRegisteredTool", toolName });
+      return [];
+    },
+    async getTools() {
+      return tools;
+    },
+    async registerManual() {
+      return { registered: true };
+    },
+    async searchTools() {
+      return tools;
+    },
+    toolToTypeScriptInterface(tool) {
+      return `// ${tool.name}`;
+    }
+  };
+}
+
+const exclusionTools = [
+  { name: "proxyman_mcp.get_flows", description: "flows", tags: [], inputs: {}, outputs: {} },
+  { name: "proxyman_mcp.get_version", description: "version", tags: [], inputs: {}, outputs: {} }
+];
+
+test("wrapper getTools hides excluded tools", async () => {
+  const registry = new Map([
+    ["proxyman_mcp", { defaultDisabled: false, exclude: ["get_flows"], include: [] }]
+  ]);
+  const client = createCleanToolNameClient(makeBaseClient(exclusionTools, []), registry);
+  const visible = await client.getTools();
+  assert.deepEqual(visible.map((t) => t.name), ["proxyman_mcp.get_version"]);
+});
+
+test("wrapper searchTools hides excluded tools", async () => {
+  const registry = new Map([
+    ["proxyman_mcp", { defaultDisabled: true, exclude: [], include: ["get_version"] }]
+  ]);
+  const client = createCleanToolNameClient(makeBaseClient(exclusionTools, []), registry);
+  const found = await client.searchTools("anything", 10);
+  assert.deepEqual(found.map((t) => t.name), ["proxyman_mcp.get_version"]);
+});
+
+test("wrapper callTool blocks excluded tools and allows visible ones", async () => {
+  const calls = [];
+  const registry = new Map([
+    ["proxyman_mcp", { defaultDisabled: false, exclude: ["get_flows"], include: [] }]
+  ]);
+  const client = createCleanToolNameClient(makeBaseClient(exclusionTools, calls), registry);
+
+  await assert.rejects(
+    () => client.callTool("proxyman_mcp.get_flows", {}),
+    /disabled by the manual exclusion config/
+  );
+  await client.callTool("proxyman_mcp.get_version", {});
+  assert.deepEqual(calls.at(-1), {
+    kind: "callTool",
+    toolName: "proxyman_mcp.get_version",
+    toolArgs: {}
+  });
+});
+
+test("wrapper getRequiredVariablesForRegisteredTool blocks excluded tools", async () => {
+  const registry = new Map([
+    ["proxyman_mcp", { defaultDisabled: false, exclude: ["get_flows"], include: [] }]
+  ]);
+  const client = createCleanToolNameClient(makeBaseClient(exclusionTools, []), registry);
+  await assert.rejects(
+    () => client.getRequiredVariablesForRegisteredTool("proxyman_mcp.get_flows"),
+    /disabled by the manual exclusion config/
+  );
+});
+
+test("wrapper with no registry leaves all tools visible (back-compat)", async () => {
+  const client = createCleanToolNameClient(makeBaseClient(exclusionTools, []));
+  const visible = await client.getTools();
+  assert.equal(visible.length, 2);
+});
