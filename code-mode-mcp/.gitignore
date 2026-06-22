@@ -207,6 +207,10 @@ output.md
 # Generated exclusion configs (may mirror a personal/local .utcp_config.json)
 configs/
 
+# The shared script helpers are real source — exempt from the Python `lib/` rule above.
+!scripts/lib/
+!scripts/lib/**
+
 # keep graph outputs, skip heavy/local-only files
 graphify-out/cache/            # optional: commit for shared extraction speed, skip to keep repo small
 graphify-out/manifest.json     # mtime-based, invalid after git clone — always gitignore this

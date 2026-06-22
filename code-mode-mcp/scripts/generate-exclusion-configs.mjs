@@ -23,25 +23,15 @@
  *
  * Tool names are written in canonical form (`manual.server.tool`), which the
  * exclusion matcher always recognizes. Edit the generated arrays to taste.
+ *
+ * For an interactive UI over the same data, use `npm run config-builder`.
  */
 
 import { promises as fs } from "fs";
 import path from "path";
 import process from "process";
 
-import dotenv from "dotenv";
-
-// UTCP protocol plugins — imported for their side-effect registration so the
-// client can construct HTTP / MCP / CLI / file / text manuals from the config.
-import "@utcp/http";
-import "@utcp/text";
-import "@utcp/mcp";
-import "@utcp/cli";
-import "@utcp/dotenv-loader";
-import "@utcp/file";
-
-import { UtcpClientConfigSerializer, ensureCorePluginsInitialized } from "@utcp/sdk";
-import { CodeModeUtcpClient } from "@utcp/code-mode";
+import { resolveConfigPath, discoverManuals } from "./lib/utcp-config.mjs";
 
 const OUTPUT_DIR_NAME = "configs";
 const OUTPUT_FILES = {
@@ -49,72 +39,17 @@ const OUTPUT_FILES = {
   includeAll: "all-tools-included-default-disabled.utcp_config.json"
 };
 
-function parseCliConfigArg(argv) {
-  const args = argv.slice(2);
-  for (let i = 0; i < args.length; i++) {
-    const arg = args[i];
-    if (arg === "--config" || arg === "-c") {
-      return args[i + 1];
-    }
-    if (arg.startsWith("--config=")) {
-      return arg.slice("--config=".length);
-    }
-    if (!arg.startsWith("-")) {
-      return arg;
-    }
+function toolNamesByManual(manuals) {
+  const map = new Map();
+  for (const manual of manuals) {
+    map.set(manual.name, manual.tools.map((tool) => tool.name).sort());
   }
-  return undefined;
-}
-
-function resolveConfigPath() {
-  const cliArg = parseCliConfigArg(process.argv);
-  // dotenv.config() does NOT override existing env vars; capture the .env-parsed
-  // value separately so a `.env` entry wins over a pre-existing environment var.
-  const fromDotenv = dotenv.config().parsed ?? {};
-  const resolved =
-    cliArg ??
-    fromDotenv.UTCP_CONFIG_PATH ??
-    fromDotenv.UTCP_CONFIG_FILE ??
-    process.env.UTCP_CONFIG_PATH ??
-    process.env.UTCP_CONFIG_FILE;
-
-  if (!resolved) {
-    throw new Error(
-      "No UTCP config path provided.\n" +
-        "Provide one via:\n" +
-        "  CLI:  node scripts/generate-exclusion-configs.mjs <path-to-.utcp_config.json>\n" +
-        "  .env: UTCP_CONFIG_PATH=/abs/path/.utcp_config.json\n" +
-        "  env:  UTCP_CONFIG_PATH=/abs/path/.utcp_config.json node scripts/generate-exclusion-configs.mjs"
-    );
-  }
-  return path.resolve(resolved);
-}
-
-function groupToolNamesByManual(tools) {
-  /** @type {Map<string, Set<string>>} */
-  const byManual = new Map();
-  for (const tool of tools) {
-    const name = tool?.name;
-    if (typeof name !== "string" || name.length === 0) {
-      continue;
-    }
-    const dotIndex = name.indexOf(".");
-    const manualName = dotIndex === -1 ? name : name.slice(0, dotIndex);
-    if (!byManual.has(manualName)) {
-      byManual.set(manualName, new Set());
-    }
-    byManual.get(manualName).add(name);
-  }
-  return byManual;
+  return map;
 }
 
 function toolsForTemplate(template, byManual) {
-  const manualName = typeof template?.name === "string" ? template.name : undefined;
-  if (!manualName) {
-    return [];
-  }
-  const set = byManual.get(manualName);
-  return set ? [...set].sort() : [];
+  const name = typeof template?.name === "string" ? template.name : undefined;
+  return name ? byManual.get(name) ?? [] : [];
 }
 
 function buildExcludeAllConfig(rawConfig, templates, byManual) {
@@ -142,27 +77,11 @@ async function main() {
   const configPath = resolveConfigPath();
   console.log(`Source config: ${configPath}`);
 
-  const raw = await fs.readFile(configPath, "utf-8");
-  const rawConfig = JSON.parse(raw);
+  const { rawConfig, templates, manuals, toolCount } = await discoverManuals(configPath, (msg) =>
+    console.log(msg)
+  );
 
-  const templates = Array.isArray(rawConfig.manual_call_templates)
-    ? rawConfig.manual_call_templates
-    : [];
-  if (templates.length === 0) {
-    throw new Error(`No manual_call_templates found in ${configPath}`);
-  }
-
-  ensureCorePluginsInitialized();
-
-  const scriptDir = path.dirname(configPath);
-  const clientConfig = new UtcpClientConfigSerializer().validateDict(rawConfig);
-
-  console.log(`Registering ${templates.length} manual(s) and discovering tools...`);
-  const client = await CodeModeUtcpClient.create(scriptDir, clientConfig);
-  const tools = await client.getTools();
-  console.log(`Discovered ${tools.length} tool(s).`);
-
-  const byManual = groupToolNamesByManual(tools);
+  const byManual = toolNamesByManual(manuals);
   for (const template of templates) {
     const count = toolsForTemplate(template, byManual).length;
     if (count === 0) {
@@ -187,6 +106,7 @@ async function main() {
     JSON.stringify(buildIncludeAllConfig(rawConfig, templates, byManual), null, 2) + "\n"
   );
 
+  console.log(`Discovered ${toolCount} tool(s) across ${manuals.length} manual(s).`);
   console.log("Wrote:");
   console.log(`  ${excludeAllPath}`);
   console.log(`  ${includeAllPath}`);
