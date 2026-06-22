@@ -52,6 +52,7 @@ const DEFAULT_LIST_TOOLS_LIMIT = 300;
 const MAX_LIST_TOOLS_LIMIT = 500;
 
 let utcpClient: CodeModeUtcpClient | null = null;
+let exclusionRegistry: ToolExclusionRegistry = new Map();
 
 export interface CodeModeMcpClientLike {
   callToolChain(code: string, timeout?: number, memoryLimit?: number): Promise<{ result: unknown; logs: string[] }>;
@@ -478,12 +479,18 @@ export function getToolDefinitions(options: ToolRuntimeOptions = {}): ToolDefini
       title: "Register a UTCP Manual",
       description: "Register a UTCP manual call template with the current UTCP client.",
       inputSchema: {
-        manual_call_template: CallTemplateSchema.describe("The UTCP manual call template to register.")
+        manual_call_template: CallTemplateSchema.describe(
+          "The UTCP manual call template to register. Optional exclude_tools / include_tools / default_disabled fields control which of this manual's tools are exposed."
+        )
       },
       handler: async (input) => {
         try {
           const client = await getClient();
-          const result = await client.registerManual(input.manual_call_template);
+          const sanitizedTemplate = applyManualExclusion(
+            exclusionRegistry,
+            input.manual_call_template as Record<string, unknown>
+          );
+          const result = await client.registerManual(sanitizedTemplate as any);
           return textResponse({ success: true, result });
         } catch (error) {
           return errorResponse(error instanceof Error ? error.message : String(error));
@@ -501,6 +508,9 @@ export function getToolDefinitions(options: ToolRuntimeOptions = {}): ToolDefini
         try {
           const client = await getClient();
           const success = await client.deregisterManual(input.manual_name);
+          if (success) {
+            exclusionRegistry.delete(input.manual_name);
+          }
           return textResponse({
             success,
             manual_name: input.manual_name,
@@ -761,8 +771,13 @@ async function initializeUtcpClient(): Promise<CodeModeUtcpClient> {
     }
   }
 
-  const clientConfig = new UtcpClientConfigSerializer().validateDict(rawConfig) as UtcpClientConfig;
-  utcpClient = createCleanToolNameClient(await CodeModeUtcpClient.create(scriptDir, clientConfig)) as CodeModeUtcpClient;
+  const { registry, sanitizedConfig } = buildExclusionRegistryFromConfig(rawConfig);
+  exclusionRegistry = registry;
+  const clientConfig = new UtcpClientConfigSerializer().validateDict(sanitizedConfig) as UtcpClientConfig;
+  utcpClient = createCleanToolNameClient(
+    await CodeModeUtcpClient.create(scriptDir, clientConfig),
+    exclusionRegistry
+  ) as CodeModeUtcpClient;
   return utcpClient;
 }
 

@@ -216,3 +216,61 @@ test("wrapper with no registry leaves all tools visible (back-compat)", async ()
   const visible = await client.getTools();
   assert.equal(visible.length, 2);
 });
+
+import { getToolDefinitions } from "../dist/index.js";
+
+function parseText(result) {
+  return JSON.parse(result.content[0].text);
+}
+
+test("register_manual strips exclusion keys before delegating to the SDK", async () => {
+  const received = [];
+  const baseClient = {
+    async callTool() { return {}; },
+    async callToolChain() { return { result: null, logs: [] }; },
+    async deregisterManual() { return true; },
+    async getRequiredVariablesForRegisteredTool() { return []; },
+    async getTools() { return []; },
+    async registerManual(template) {
+      received.push(template);
+      return { registered: true };
+    },
+    async searchTools() { return []; },
+    toolToTypeScriptInterface(tool) { return `// ${tool.name}`; }
+  };
+  const client = createCleanToolNameClient(baseClient);
+  const definitions = getToolDefinitions({ getClient: async () => client });
+  const registerManual = definitions.find((d) => d.name === "register_manual");
+
+  const payload = parseText(
+    await registerManual.handler({
+      manual_call_template: {
+        name: "demo",
+        call_template_type: "mcp",
+        config: { mcpServers: { demo: { command: "x", transport: "stdio" } } },
+        exclude_tools: ["secret_tool"]
+      }
+    })
+  );
+
+  assert.equal(payload.success, true);
+  assert.equal(received.length, 1);
+  assert.equal("exclude_tools" in received[0], false, "SDK must not receive custom keys");
+  assert.equal(received[0].name, "demo");
+});
+
+import { z as zod } from "zod";
+
+test("register_manual inputSchema preserves exclusion keys (schema is not stripping them)", () => {
+  const registerManual = getToolDefinitions().find((d) => d.name === "register_manual");
+  // Reproduce how the MCP SDK validates incoming args: z.object(shape).parse(...)
+  const parsed = zod.object(registerManual.inputSchema).parse({
+    manual_call_template: {
+      name: "demo",
+      call_template_type: "mcp",
+      config: { mcpServers: { demo: { command: "x", transport: "stdio" } } },
+      exclude_tools: ["secret_tool"]
+    }
+  });
+  assert.deepEqual(parsed.manual_call_template.exclude_tools, ["secret_tool"]);
+});
