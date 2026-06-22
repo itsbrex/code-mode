@@ -7,13 +7,13 @@
    only changes how that decision serializes (exclude_tools vs include_tools).
    ========================================================================== */
 
+import { buildConfig as serializeConfig } from "./serialize.js";
+
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
 const esc = (s) =>
   String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-
-const EXCLUSION_KEYS = ["exclude_tools", "include_tools", "default_disabled"];
 
 /* ----------------------------------------------------------------- State -- */
 
@@ -457,40 +457,9 @@ function resetDecisions() {
 
 /* ----------------------------------------------------------------- Output -- */
 
-function stripKeys(template) {
-  const clone = { ...template };
-  for (const k of EXCLUSION_KEYS) delete clone[k];
-  return clone;
-}
-
 function buildConfig() {
-  const base = manifest.config || {};
-  const templates = Array.isArray(base.manual_call_templates) ? base.manual_call_templates : [];
-  const tplByName = new Map();
-  for (const t of templates) {
-    const n = t && typeof t.name === "string" ? t.name : undefined;
-    if (n !== undefined && !tplByName.has(n)) tplByName.set(n, t);
-  }
-
-  // Emit in the current display order, dropping any manual marked for removal.
-  const out = [];
-  for (const manual of orderedManuals()) {
-    const template = tplByName.get(manual.name);
-    if (!template) continue; // discovered-only manual without a source template
-    const dec = decisions.get(manual.name);
-    if (dec && dec.removed) continue; // excluded from output entirely
-    const clean = stripKeys(template);
-    if (!dec) {
-      out.push(clean);
-      continue;
-    }
-    const hiddenNames = manual.tools.filter((t) => dec.hidden.has(t.name)).map((t) => t.name).sort();
-    const exposedNames = manual.tools.filter((t) => !dec.hidden.has(t.name)).map((t) => t.name).sort();
-    if (dec.defaultDisabled) out.push({ ...clean, default_disabled: true, include_tools: exposedNames });
-    else if (hiddenNames.length) out.push({ ...clean, exclude_tools: hiddenNames });
-    else out.push(clean);
-  }
-  return { ...base, manual_call_templates: out };
+  // Emit in the current display order; serialize.js drops removed manuals.
+  return serializeConfig(manifest.config || {}, orderedManuals(), decisions);
 }
 
 function syntaxHighlight(json) {

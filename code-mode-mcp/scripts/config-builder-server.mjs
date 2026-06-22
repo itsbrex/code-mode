@@ -27,6 +27,8 @@ import process from "process";
 import { spawn } from "child_process";
 import { fileURLToPath } from "url";
 
+import { intro, outro, note, log, spinner } from "@clack/prompts";
+
 import { resolveConfigPath, discoverManuals } from "./lib/utcp-config.mjs";
 import {
   buildExclusionRegistryFromConfig,
@@ -57,10 +59,8 @@ function shortNameOf(toolName, manualName) {
   return toolName.startsWith(prefix) ? toolName.slice(prefix.length) : toolName;
 }
 
-async function buildManifest(configPath) {
-  const { rawConfig, manuals, toolCount } = await discoverManuals(configPath, (msg) =>
-    console.error(msg)
-  );
+async function buildManifest(configPath, onProgress = () => {}) {
+  const { rawConfig, manuals, toolCount } = await discoverManuals(configPath, onProgress);
 
   // Authoritative initial state: reuse the exact matcher the MCP server enforces.
   const { registry } = buildExclusionRegistryFromConfig(rawConfig);
@@ -175,8 +175,13 @@ function createServer(manifest) {
         return;
       }
 
-      if (req.method === "GET" && (pathname === "/styles.css" || pathname === "/app.js")) {
-        await serveStatic(res, path.join(APP_DIR, pathname.slice(1)));
+      if (req.method === "GET" && /^\/[A-Za-z0-9_-]+\.(js|mjs|css|svg)$/.test(pathname)) {
+        try {
+          await serveStatic(res, path.join(APP_DIR, path.basename(pathname)));
+        } catch {
+          res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
+          res.end("Not found");
+        }
         return;
       }
 
@@ -231,28 +236,47 @@ async function main() {
   const portFlag = parseFlag(argv, "--port");
   const preferredPort = portFlag ? Number(portFlag) : DEFAULT_PORT;
 
-  const configPath = resolveConfigPath();
-  console.error(`Source config: ${configPath}`);
+  intro("Tool Exclusion Config Builder");
 
-  const manifest = await buildManifest(configPath);
+  const configPath = resolveConfigPath();
+  log.step(`Source: ${configPath}`);
+
+  const spin = spinner();
+  spin.start("Registering manuals & discovering tools");
+
+  // Silence the UTCP SDK's own console chatter so the spinner stays clean.
+  const original = { log: console.log, info: console.info, warn: console.warn, error: console.error };
+  console.log = console.info = console.warn = console.error = () => {};
+  let manifest;
+  try {
+    manifest = await buildManifest(configPath, (msg) => spin.message(msg));
+  } finally {
+    Object.assign(console, original);
+  }
+  spin.stop(`Discovered ${manifest.toolCount} tools across ${manifest.manualCount} manuals`);
+
+  const empty = manifest.manuals.filter((m) => m.tools.length === 0);
+  if (empty.length) {
+    log.warn(`${empty.length} manual(s) returned no tools (failed to launch or genuinely empty): ${empty.map((m) => m.name).join(", ")}`);
+  }
 
   const server = createServer(manifest);
   const port = await listenWithFallback(server, host, preferredPort);
   const url = `http://${host}:${port}/`;
 
-  console.error("");
-  console.error(`  Tool Exclusion Config Builder`);
-  console.error(`  ${manifest.manualCount} manual(s), ${manifest.toolCount} tool(s)`);
-  console.error(`  ${url}`);
-  console.error("");
-  console.error("  Press Ctrl+C to stop.");
+  note(
+    `${url}\n\n${manifest.manualCount} manuals · ${manifest.toolCount} tools` + (noOpen ? "" : "\nOpening your browser…"),
+    "Ready"
+  );
 
   if (!noOpen) {
     openBrowser(url);
   }
+
+  outro("Running — press Ctrl+C to stop.");
 }
 
 main().catch((error) => {
-  console.error(`config-builder failed: ${error instanceof Error ? error.message : String(error)}`);
+  log.error(`config-builder failed: ${error instanceof Error ? error.message : String(error)}`);
   process.exit(1);
 });

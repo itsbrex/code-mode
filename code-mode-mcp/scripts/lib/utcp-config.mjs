@@ -93,7 +93,7 @@ function manualNameOf(toolName) {
  * Operates on a deep clone — the original config is untouched (so the generated
  * output preserves the user's enabled/disabled settings).
  */
-function withAllManualsEnabled(rawConfig) {
+export function withAllManualsEnabled(rawConfig) {
   const clone = JSON.parse(JSON.stringify(rawConfig));
   const templates = Array.isArray(clone.manual_call_templates) ? clone.manual_call_templates : [];
   for (const template of templates) {
