@@ -5,7 +5,7 @@
   "type": "module",
   "main": "dist/index.js",
   "bin": {
-    "mcp-bridge": "./dist/index.js"
+    "code-mode-mcp": "./dist/index.js"
   },
   "files": [
     "dist/**/*",
@@ -13,8 +13,10 @@
   ],
   "scripts": {
     "build": "node --max-old-space-size=8192 ./node_modules/typescript/bin/tsc",
+    "test": "npm run build && node --test tests/*.test.mjs",
     "prepublishOnly": "npm run build",
-    "start": "node dist/index.js"
+    "start": "node dist/index.js",
+    "generate-exclusion-configs": "node scripts/generate-exclusion-configs.mjs"
   },
   "keywords": [
     "utcp",
@@ -32,11 +34,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/universal-tool-calling-protocol/utcp-mcp.git"
+    "url": "https://github.com/universal-tool-calling-protocol/code-mode.git",
+    "directory": "code-mode-mcp"
   },
-  "homepage": "https://github.com/universal-tool-calling-protocol/utcp-mcp#readme",
+  "homepage": "https://github.com/universal-tool-calling-protocol/code-mode/tree/main/code-mode-mcp#readme",
   "bugs": {
-    "url": "https://github.com/universal-tool-calling-protocol/utcp-mcp/issues"
+    "url": "https://github.com/universal-tool-calling-protocol/code-mode/issues"
   },
   "engines": {
     "node": ">=18.0.0"
