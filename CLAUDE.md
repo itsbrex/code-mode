@@ -69,7 +69,13 @@ npm run build    # tsc → dist/
 npm start        # node dist/index.js (stdio transport)
 ```
 
-Note: source file `index.ts` may not be present on disk (check before editing).
+### Host → UTCP import (`npm run host-import`)
+
+Migrates traditional MCP servers from Claude Code / Claude Desktop / Codex host
+configs into the UTCP config (`code-mode-mcp/scripts/host-import-cli.mjs`, runs
+via `tsx`). Dry-run by default; `--apply` writes manuals (backup-on-write),
+`--strip-host` removes them from the hosts, `--pin` protects servers, `--eject`
+reverses a migration. See `code-mode-mcp/docs/host-import.md`.
 
 ## Architecture
 
