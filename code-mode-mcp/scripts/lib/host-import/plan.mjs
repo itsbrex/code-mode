@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { convertServer } from "./to-utcp.mjs";
+import { isPinned } from "./pins.mjs";
 
 // Mirror of scripts/lib/utcp-config.mjs toManualIdentifier — the UTCP SDK files
 // tools under this sanitized form, so dedup must compare both spellings.
@@ -19,19 +20,21 @@ export function existingManualNames(utcpConfig) {
   return set;
 }
 
-export function buildPlan(hosts, utcpConfig) {
+export function buildPlan(hosts, utcpConfig, pins = []) {
   const existing = existingManualNames(utcpConfig);
   const items = hosts.map((entry) => {
     const conv = convertServer(entry.name, entry.server);
     const duplicate = existing.has(entry.name) || existing.has(toManualIdentifier(entry.name));
+    const pinned = isPinned(pins, entry);
     return {
       host: entry.host,
       scope: entry.scope,
       projectKey: entry.projectKey,
       name: entry.name,
       risk: conv.risk,
-      reason: duplicate ? "already present in the UTCP config" : conv.reason,
+      reason: pinned ? "pinned — never touched" : duplicate ? "already present in the UTCP config" : conv.reason,
       duplicate,
+      pinned,
       manual: conv.ok ? conv.manual : undefined,
       source: entry,
     };
@@ -44,7 +47,7 @@ export function selectManuals(plan, { risks = ["safe", "partial"] } = {}) {
   const seen = new Set();
   const out = [];
   for (const item of plan.items) {
-    if (item.duplicate || !item.manual || !allow.has(item.risk)) continue;
+    if (item.duplicate || item.pinned || !item.manual || !allow.has(item.risk)) continue;
     if (seen.has(item.name)) continue; // same server in multiple hosts → emit once
     seen.add(item.name);
     out.push(item.manual);
