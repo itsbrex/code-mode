@@ -19,7 +19,8 @@
     "start": "node dist/index.js",
     "generate-exclusion-configs": "node scripts/generate-exclusion-configs.mjs",
     "config-builder": "tsx scripts/config-builder-server.mjs",
-    "config-builder:no-open": "tsx scripts/config-builder-server.mjs --no-open"
+    "config-builder:no-open": "tsx scripts/config-builder-server.mjs --no-open",
+    "host-import": "tsx scripts/host-import-cli.mjs"
   },
   "keywords": [
     "utcp",
