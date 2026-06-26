@@ -5,6 +5,8 @@ import path from "node:path";
 import { readAllHosts, defaultHostPaths } from "./lib/host-import/read-hosts.mjs";
 import { buildPlan, selectManuals, readUtcpConfig } from "./lib/host-import/plan.mjs";
 import { addManualsToUtcp, stripFromClaudeJson, stripFromCodexToml } from "./lib/host-import/apply.mjs";
+import { loadPins } from "./lib/host-import/pins.mjs";
+import { ejectManuals } from "./lib/host-import/eject.mjs";
 import { resolveConfigPath } from "./lib/utcp-config.mjs";
 
 // resolveConfigPath throws when no UTCP_CONFIG_PATH/UTCP_CONFIG_FILE is set
@@ -32,6 +34,10 @@ export function parseArgs(argv) {
     stripHost: has("--strip-host"),
     risks: risk ? risk.split(",").map((s) => s.trim()).filter(Boolean) : ["safe", "partial"],
     only: only ? only.split(",").map((s) => s.trim()).filter(Boolean) : null,
+    pinsFile: val("--pins-file") || `${process.env.HOME || ""}/.host-import-pins.json`,
+    pins: argv.reduce((acc, a, i) => (a === "--pin" && argv[i + 1] ? [...acc, argv[i + 1]] : acc), []),
+    eject: val("--eject") ? val("--eject").split(",").map((s) => s.trim()).filter(Boolean) : null,
+    to: val("--to") ? val("--to").split(",").map((s) => s.trim()).filter(Boolean) : ["claude-code"],
     paths: defaultHostPaths(home),
     utcpPath: safeResolveConfigPath(),
     backupRoot: path.join(home, ".host-import-backups"),
@@ -50,13 +56,18 @@ export function renderPlanText(plan) {
 }
 
 export function run(opts) {
+  if (opts.eject && opts.eject.length) {
+    const targets = opts.to.map((host) => ({ host, scope: "global" }));
+    return ejectManuals(opts.utcpPath, opts.eject, targets, opts.paths, opts.backupRoot);
+  }
+
   let hosts = readAllHosts(opts.paths);
   if (opts.only) {
     const want = new Set(opts.only);
     hosts = hosts.filter((h) => want.has(h.name));
   }
   const utcp = readUtcpConfig(opts.utcpPath);
-  const plan = buildPlan(hosts, utcp);
+  const plan = buildPlan(hosts, utcp, loadPins(opts.pinsFile, opts.pins));
   if (!opts.apply) return { plan };
 
   const manuals = selectManuals(plan, { risks: opts.risks });
@@ -96,6 +107,11 @@ function main() {
     process.exit(1);
   }
   const res = run(opts);
+  if (res.ejected) {
+    for (const e of res.ejected) console.log(`Ejected ${e.name} → ${e.wroteTo.join(", ")}`);
+    console.log(`Removed ${res.removed.length} manual(s) from ${opts.utcpPath}`);
+    return;
+  }
   console.log(renderPlanText(res.plan));
   if (res.applied) {
     console.log(`\nApplied: +${res.applied.added.length} manual(s) → ${opts.utcpPath}`);
