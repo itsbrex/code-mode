@@ -318,9 +318,9 @@ function manualSection(entry) {
       ? `<p class="manual__empty">No tools discovered for this manual.</p>`
       : tools.map((t) => toolRow(manual, t)).join("");
 
-  return `<section class="manual${collapsed ? " is-collapsed" : ""}${removed ? " is-removed" : ""}" data-manual="${esc(manual.name)}" draggable="true">
+  return `<section class="manual${collapsed ? " is-collapsed" : ""}${removed ? " is-removed" : ""}" data-manual="${esc(manual.name)}">
     <header class="manual__head">
-      <button type="button" class="manual__grip" title="Drag to reorder this manual" aria-label="Drag to reorder ${esc(manual.name)}"><svg class="ico"><use href="#i-grip"/></svg></button>
+      <button type="button" class="manual__grip" draggable="true" title="Drag to reorder this manual" aria-label="Drag to reorder ${esc(manual.name)}"><svg class="ico"><use href="#i-grip"/></svg></button>
       <button type="button" class="disclosure" aria-expanded="${!collapsed}" title="Collapse / expand this manual" aria-label="Toggle ${esc(manual.name)}"><svg class="ico"><use href="#i-chevron"/></svg></button>
       <input type="checkbox" class="check manual__select" ${allSel ? "checked" : ""} data-some="${someSel}" title="Select every tool in this manual for bulk actions" aria-label="Select all tools in ${esc(manual.name)}" />
       <h2 class="manual__name" title="${esc(manual.name)}">${esc(manual.name)}</h2>
@@ -463,14 +463,19 @@ function buildConfig() {
 }
 
 function syntaxHighlight(json) {
-  return esc(json).replace(
+  // Match tokens on the RAW JSON, then HTML-escape each token's text. (Escaping
+  // first would turn every `"` into `&quot;`, so the string/key regex below would
+  // never match — leaving keys/strings uncolored and producing no .j-key spans
+  // for the preview-scroll feature to target.) Structural gaps ({}[],: + space)
+  // contain no HTML-special chars, so they're safe to pass through unescaped.
+  return String(json).replace(
     /("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false)\b|\bnull\b|-?\d+(?:\.\d*)?(?:[eE][+-]?\d+)?)/g,
     (m) => {
       let cls = "j-num";
       if (/^"/.test(m)) cls = /:$/.test(m) ? "j-key" : "j-str";
       else if (/true|false/.test(m)) cls = "j-bool";
       else if (/null/.test(m)) cls = "j-null";
-      return `<span class="${cls}">${m}</span>`;
+      return `<span class="${cls}">${esc(m)}</span>`;
     }
   );
 }
@@ -480,6 +485,42 @@ function updatePreview() {
   const { hidden, dd, removed } = tallyDecisions();
   $("#previewMeta").textContent =
     `${manifest.manualCount - removed} manuals · ${hidden} hidden · ${dd} default_disabled` + (removed ? ` · ${removed} removed` : "");
+}
+
+/* Smooth-scroll the JSON preview to a manual's config block + briefly flash it.
+   Triggered by clicking/expanding a manual (NOT by dragging to reorder). */
+function scrollPreviewToManual(name) {
+  const out = $("#jsonOut");
+  const scroller = out?.closest(".preview__code");
+  if (!scroller) return;
+
+  // On narrow layouts the preview is an off-canvas drawer — make sure it's open.
+  // On wide layouts it's a persistent sticky column and this class is a no-op.
+  if (!document.body.classList.contains("preview-open")) {
+    document.body.classList.add("preview-open");
+    $("#previewToggle")?.setAttribute("aria-expanded", "true");
+  }
+
+  requestAnimationFrame(() => {
+    // The mcpServers entry key (e.g. `"proxyman-mcp":`) sits near the top of this
+    // manual's serialized block; fall back to the template's name string value.
+    const keyText = `"${name}":`;
+    const nameVal = `"${name}"`;
+    const target =
+      $$(".j-key", out).find((el) => el.textContent === keyText) ||
+      $$(".j-str", out).find((el) => el.textContent === nameVal);
+    if (!target) return;
+
+    // Delta-based offset (transform-invariant, so it works mid drawer-slide).
+    const sRect = scroller.getBoundingClientRect();
+    const tRect = target.getBoundingClientRect();
+    const top = scroller.scrollTop + (tRect.top - sRect.top) - scroller.clientHeight / 2 + tRect.height / 2;
+    scroller.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
+
+    target.classList.remove("j-flash");
+    void target.offsetWidth; // restart the flash animation
+    target.classList.add("j-flash");
+  });
 }
 
 function currentJson() {
@@ -639,6 +680,7 @@ function wireEvents() {
       else ui.collapsed.add(name);
       sec.classList.toggle("is-collapsed");
       disclosure.setAttribute("aria-expanded", String(!ui.collapsed.has(name)));
+      if (!ui.collapsed.has(name)) scrollPreviewToManual(name); // expanded → reveal in preview
       persist();
       return;
     }
@@ -664,7 +706,17 @@ function wireEvents() {
       return;
     }
     const act = e.target.closest("[data-act]");
-    if (act) manualSetAll(act.closest(".manual").dataset.manual, act.dataset.act === "hide-all");
+    if (act) {
+      manualSetAll(act.closest(".manual").dataset.manual, act.dataset.act === "hide-all");
+      return;
+    }
+
+    // Plain click on a manual header (its name/badge/counts/empty space) — not a
+    // control and not the drag grip — scrolls the JSON preview to that server.
+    const head = e.target.closest(".manual__head");
+    if (head && !e.target.closest("button, input, label, .switch, .manual__grip")) {
+      scrollPreviewToManual(head.closest(".manual").dataset.manual);
+    }
   });
 
   wireDragReorder();
@@ -816,17 +868,18 @@ function clearDragMarks() {
 function wireDragReorder() {
   const root = $("#tools");
   root.addEventListener("dragstart", (e) => {
-    const section = e.target.closest(".manual");
+    // Only the grip is draggable (a draggable <button> reliably fires dragstart;
+    // making the whole section draggable + a button grip did not).
+    const grip = e.target.closest(".manual__grip");
+    if (!grip) return;
+    const section = grip.closest(".manual");
     if (!section) return;
-    if (!e.target.closest(".manual__grip")) {
-      e.preventDefault(); // only the grip initiates a drag
-      return;
-    }
     draggedManual = section.dataset.manual;
     section.classList.add("is-dragging");
     e.dataTransfer.effectAllowed = "move";
     try {
       e.dataTransfer.setData("text/plain", draggedManual);
+      e.dataTransfer.setDragImage(section, 16, 16); // ghost the whole row, not just the grip
     } catch {
       /* some browsers require this in a try */
     }

@@ -50,6 +50,17 @@ export function getManualNameFromToolName(toolName: string): string {
   return dotIndex === -1 ? toolName : toolName.slice(0, dotIndex);
 }
 
+/**
+ * Mirror the UTCP SDK's manual-name → identifier sanitization. Discovered/exposed
+ * tool names are prefixed with this sanitized form (e.g. a manual named
+ * "proxyman-mcp" appears as "proxyman_mcp.<tool>"), but exclusion rules are keyed
+ * by the raw config template name. Registering under both keys lets the runtime
+ * matcher find the rule regardless of which form the tool name carries.
+ */
+function sanitizeManualName(name: string): string {
+  return name.replace(/[^a-zA-Z0-9_]/g, "_").replace(/^[0-9]/, "_$&");
+}
+
 export function getToolShortName(toolName: string, manualName: string): string {
   const prefix = `${manualName}.`;
   return toolName.startsWith(prefix) ? toolName.slice(prefix.length) : toolName;
@@ -85,10 +96,15 @@ export function applyManualExclusion(
   const name = typeof template?.name === "string" ? template.name : undefined;
   const rule = parseExclusionRule(template);
   if (name) {
+    const sanitized = sanitizeManualName(name);
     if (rule) {
       registry.set(name, rule);
+      if (sanitized !== name) {
+        registry.set(sanitized, rule);
+      }
     } else {
       registry.delete(name);
+      registry.delete(sanitized);
     }
   }
   return stripExclusionKeys(template);

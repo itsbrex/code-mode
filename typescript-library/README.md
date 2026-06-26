@@ -1,6 +1,6 @@
 # @utcp/code-mode
 
-Execute TypeScript code with direct access to UTCP tools using isolated-vm for secure sandboxed execution.
+Execute TypeScript code with direct access to UTCP tools using `isolated-vm` for sandboxed execution.
 
 ## Installation
 
@@ -11,115 +11,126 @@ npm install @utcp/code-mode @utcp/sdk @utcp/direct-call isolated-vm
 ## Quick Start
 
 ```typescript
-import { CodeModeUtcpClient } from '@utcp/code-mode';
-import { addFunctionToUtcpDirectCall } from '@utcp/direct-call';
+import { CodeModeUtcpClient } from "@utcp/code-mode";
+import { addFunctionToUtcpDirectCall } from "@utcp/direct-call";
 
-// Register a function that returns a UTCP manual
-addFunctionToUtcpDirectCall('getWeatherManual', async () => ({
-  utcp_version: '0.2.0',
-  tools: [{
-    name: 'get_current',
-    description: 'Get current weather for a city',
-    inputs: {
-      type: 'object',
-      properties: { city: { type: 'string' } },
-      required: ['city']
-    },
-    tool_call_template: {
-      call_template_type: 'direct-call',
-      callable_name: 'getWeather'
+addFunctionToUtcpDirectCall("getWeatherManual", async () => ({
+  utcp_version: "0.2.0",
+  tools: [
+    {
+      name: "get_current",
+      description: "Get current weather for a city",
+      inputs: {
+        type: "object",
+        properties: { city: { type: "string" } },
+        required: ["city"]
+      },
+      tool_call_template: {
+        call_template_type: "direct-call",
+        callable_name: "getWeather"
+      }
     }
-  }]
+  ]
 }));
 
-// Register the actual tool implementation
-addFunctionToUtcpDirectCall('getWeather', async (city: string) => ({
+addFunctionToUtcpDirectCall("getWeather", async (city: string) => ({
   city,
   temperature: 22,
-  condition: 'sunny'
+  condition: "sunny"
 }));
 
-// Create client and register manual
 const client = await CodeModeUtcpClient.create();
 await client.registerManual({
-  name: 'weather',
-  call_template_type: 'direct-call',
-  callable_name: 'getWeatherManual'
+  name: "weather",
+  call_template_type: "direct-call",
+  callable_name: "getWeatherManual"
 });
 
-// Execute code with tool access
 const { result, logs } = await client.callToolChain(`
-  const data = weather.get_current({ city: 'London' });
-  console.log('Weather:', data);
+  const data = weather.get_current({ city: "London" });
+  console.log("Weather:", data);
   return data;
 `);
 
 console.log(result);
-// { city: 'London', temperature: 22, condition: 'sunny' }
+console.log(logs);
 ```
 
 ## API
 
 ### `CodeModeUtcpClient.create(root_dir?, config?)`
 
-Creates a new client instance.
+Create a new client instance backed by `UtcpClient`.
 
 ```typescript
 const client = await CodeModeUtcpClient.create(
-  process.cwd(),  // optional: root directory
-  null            // optional: UtcpClientConfig
+  process.cwd(),
+  null
 );
 ```
 
-### `client.callToolChain(code, options?)`
+### `client.callToolChain(code, timeout?, memoryLimit?)`
 
-Executes TypeScript code with tool access.
+Execute TypeScript code inside the sandbox with synchronous access to registered tools.
 
 ```typescript
-const result = await client.callToolChain(code, {
-  timeout: 30000,     // execution timeout in ms (default: 30000)
-  memoryLimit: 128    // memory limit in MB (default: 128)
-});
+const { result, logs } = await client.callToolChain(
+  `
+    const current = weather.get_current({ city: "Tokyo" });
+    console.log(current);
+    return current;
+  `,
+  30_000,
+  128
+);
 ```
 
-**Returns:**
+**Returns**
+
 ```typescript
 {
-  result: any;           // return value from code
-  consoleOutput: string[]; // captured console.log/error output
+  result: any;
+  logs: string[];
 }
 ```
 
-### `client.getToolInterfaces()`
+### `client.getAllToolsTypeScriptInterfaces()`
 
-Returns TypeScript interface definitions for all registered tools.
+Return TypeScript interface definitions for all registered tools.
 
 ```typescript
-const interfaces = await client.getToolInterfaces();
+const interfaces = await client.getAllToolsTypeScriptInterfaces();
 console.log(interfaces);
-// "interface Weather_get_current_Input { city: string; } ..."
 ```
+
+### `client.toolToTypeScriptInterface(tool)`
+
+Return the TypeScript interface definition for a single UTCP tool.
 
 ### `CodeModeUtcpClient.AGENT_PROMPT_TEMPLATE`
 
-Static prompt template for AI agents explaining how to use code-mode.
+Static prompt guidance for agents using the code-mode runtime.
 
 ```typescript
 const systemPrompt = CodeModeUtcpClient.AGENT_PROMPT_TEMPLATE;
 ```
 
-## Tool Access Patterns
+## Tool Access Pattern
 
-Tools are accessed using their namespace:
+Inside `callToolChain`, tools are exposed as synchronous functions under their manual namespace:
 
 ```typescript
-// Namespaced tools (from manuals)
 manual_name.tool_name({ param: value })
-
-// Examples
-weather.get_current({ city: 'Tokyo' })
-procurement.search_parts({ mpn: 'ABC123' })
 ```
+
+Examples:
+
+```typescript
+weather.get_current({ city: "Tokyo" });
+procurement.search_parts({ mpn: "LM358" });
+```
+
+Do not use `await` for sandbox tool calls. The main process handles the async UTCP call behind the synchronous sandbox bridge.
 
 ## Runtime Context
 
@@ -127,60 +138,50 @@ Inside `callToolChain`, you have access to:
 
 | Variable | Description |
 |----------|-------------|
-| `__interfaces` | String with all TypeScript interface definitions |
-| `__getToolInterface(name)` | Get interface for specific tool |
-| `__availableTools` | Array of available tool access patterns |
-| `console.log/error/warn` | Captured and returned in `consoleOutput` |
+| `__interfaces` | String containing all generated TypeScript interfaces |
+| `__getToolInterface(name)` | Lookup for a specific tool interface |
+| `console.log/error/warn/info` | Captured into the returned `logs` array |
 | Standard JS globals | `JSON`, `Math`, `Date`, `Array`, etc. |
 
-## Example: Chaining Tools
+## Chaining Tools
 
 ```typescript
-const result = await client.callToolChain(`
-  // Get parts from supplier
-  const parts = procurement.search_parts({ mpn: 'LM358' });
-  
-  // Get pricing for each part
-  const pricing = parts.map(part => 
+const { result } = await client.callToolChain(`
+  const parts = procurement.search_parts({ mpn: "LM358" });
+  const pricing = parts.map((part) =>
     procurement.get_pricing({ part_id: part.id })
   );
-  
-  // Return combined result
   return { parts, pricing };
 `);
 ```
 
 ## Using Text Templates
 
-For loading tools from UTCP manual files:
-
 ```typescript
-import { CodeModeUtcpClient } from '@utcp/code-mode';
-import '@utcp/text'; // Enables text call template support
+import { CodeModeUtcpClient } from "@utcp/code-mode";
+import "@utcp/text";
 
 const client = await CodeModeUtcpClient.create();
 
-// Register from a UTCP manual file
 await client.registerManual({
-  name: 'myapi',
-  call_template_type: 'text',
-  file_path: './my-api-manual.utcp.json'
+  name: "myapi",
+  call_template_type: "text",
+  file_path: "./my-api-manual.utcp.json"
 });
 
-// Use tools defined in the manual
-const result = await client.callToolChain(`
-  return myapi.some_tool({ param: 'value' });
+const { result } = await client.callToolChain(`
+  return myapi.some_tool({ param: "value" });
 `);
 ```
 
 ## Security
 
-Code execution uses [isolated-vm](https://github.com/laverdet/isolated-vm) for sandboxing:
+Code execution uses [`isolated-vm`](https://github.com/laverdet/isolated-vm):
 
-- Isolated V8 context (no access to Node.js APIs)
-- Memory limits enforced
-- Execution timeouts
-- No file system or network access from sandbox
+- isolated V8 context
+- memory limits
+- execution timeouts
+- no direct Node.js filesystem or network access from the sandbox
 
 ## License
 

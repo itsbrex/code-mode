@@ -588,7 +588,9 @@ describe('CodeModeUtcpClient', () => {
     expect(promptTemplate).toContain('Tool Discovery Phase');
     expect(promptTemplate).toContain('Interface Introspection');
     expect(promptTemplate).toContain('Code Execution Guidelines');
-    expect(promptTemplate).toContain('await manual.tool');
+    expect(promptTemplate).toContain('manual.tool({ param: value })');
+    expect(promptTemplate).toContain('synchronous, no await');
+    expect(promptTemplate).not.toContain('await manual.tool');
     expect(promptTemplate).toContain('__interfaces');
     expect(promptTemplate).toContain('__getToolInterface');
     expect(promptTemplate).toContain('Discover first, code second');

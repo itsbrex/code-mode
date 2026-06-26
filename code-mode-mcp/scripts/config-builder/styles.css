@@ -1032,6 +1032,21 @@ body.preview-open .preview {
 .j-null {
   color: var(--ink-3);
 }
+.j-flash {
+  border-radius: 3px;
+  animation: jflash 1.2s var(--ease-out);
+}
+@keyframes jflash {
+  0%,
+  30% {
+    background: var(--accent-quiet);
+    box-shadow: 0 0 0 3px var(--accent-quiet);
+  }
+  100% {
+    background: transparent;
+    box-shadow: 0 0 0 3px transparent;
+  }
+}
 
 /* ------------------------------------------------------------------ Bulkbar */
 .bulkbar {

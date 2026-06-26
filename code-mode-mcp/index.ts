@@ -9,6 +9,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { ContentBlock, ContentBlockSchema } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
+import dotenv from "dotenv";
 
 import "@utcp/http";
 import "@utcp/text";
@@ -338,7 +339,12 @@ You have access to a UTCP Code Mode MCP server that exposes UTCP-native discover
 - Use \`tools_info\` to inspect full tool interfaces before writing execution code.
 - Use \`get_required_variables_for_tool\` when you need to know which environment variables a tool depends on.
 
-${CodeModeUtcpClient.AGENT_PROMPT_TEMPLATE}
+## Tool access & execution model
+- Tools are namespaced as \`manual.tool\` (e.g. \`manual_name.tool_name\`); use the full name to avoid collisions.
+- Inspect \`__interfaces\` (all interface definitions) or \`__getToolInterface('manual.tool')\` for a specific contract before writing code.
+- Call tools synchronously: \`manual.tool({ param: value })\` — no \`await\` needed; the host bridges async work internally.
+- Standard JS globals are available (\`console\`, \`JSON\`, \`Math\`, \`Date\`). All \`console\` output is captured and returned.
+- Chain calls by passing one result into the next, wrap calls in try/catch, and \`return\` the final value.
 
 ### 2. Execute code with the actual runtime model
 - \`call_tool_chain\` executes TypeScript with synchronous \`manual.tool(args)\` access.
@@ -701,7 +707,12 @@ export function registerMcpTools(server: McpServer, options: ToolRuntimeOptions 
       {
         title: definition.title,
         description: definition.description,
-        inputSchema: definition.inputSchema
+        // Cast is types-only: SDK 1.29 regressed registerTool's generic
+        // inference over the Zod inputSchema shape, producing TS2589
+        // ("Type instantiation is excessively deep"). Casting just the
+        // inputSchema breaks the deep inference without altering runtime
+        // behavior or loosening the surrounding config object.
+        inputSchema: definition.inputSchema as any
       },
       definition.handler
     );
@@ -740,14 +751,26 @@ async function initializeUtcpClient(): Promise<CodeModeUtcpClient> {
   let configPath: string;
   let scriptDir: string;
 
-  if (process.env.UTCP_CONFIG_FILE) {
-    configPath = path.resolve(process.env.UTCP_CONFIG_FILE);
+  // Resolve the config path from (precedence): the environment — an inline
+  // `UTCP_CONFIG_PATH=… code-mode-mcp` or a shell-profile export (e.g. ~/.zshrc)
+  // — then the same keys from a local `.env`. Both UTCP_CONFIG_PATH and the
+  // legacy UTCP_CONFIG_FILE are accepted. dotenv.config() does not override the
+  // process env, so an inline override always wins over a stale `.env`.
+  const dotenvParsed = dotenv.config().parsed ?? {};
+  const envConfigPath =
+    process.env.UTCP_CONFIG_PATH ??
+    process.env.UTCP_CONFIG_FILE ??
+    dotenvParsed.UTCP_CONFIG_PATH ??
+    dotenvParsed.UTCP_CONFIG_FILE;
+
+  if (envConfigPath) {
+    configPath = path.resolve(envConfigPath);
     scriptDir = path.dirname(configPath);
 
     try {
       await fs.access(configPath);
     } catch {
-      console.warn(`UTCP config file specified in UTCP_CONFIG_FILE not found: ${configPath}`);
+      console.warn(`UTCP config file from UTCP_CONFIG_PATH/UTCP_CONFIG_FILE not found: ${configPath}`);
     }
   } else {
     configPath = path.resolve(cwd, ".utcp_config.json");

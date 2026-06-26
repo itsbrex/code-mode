@@ -30,11 +30,15 @@ import { fileURLToPath } from "url";
 import { intro, outro, note, log, spinner } from "@clack/prompts";
 
 import { resolveConfigPath, discoverManuals } from "./lib/utcp-config.mjs";
+// Run via `tsx` (see package.json `config-builder` script): tsx transpiles the
+// TypeScript entry on the fly under Node, so no `tsc`/`dist` build is needed to
+// launch. (Node — not Bun — because the discovery pipeline loads the native
+// `isolated-vm` addon, which Bun cannot dlopen.)
 import {
   buildExclusionRegistryFromConfig,
   isToolExcluded,
   utcpNameToTsInterfaceName
-} from "../dist/index.js";
+} from "../index.ts";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const APP_DIR = path.join(__dirname, "config-builder");
@@ -56,7 +60,12 @@ function parseFlag(argv, name) {
 
 function shortNameOf(toolName, manualName) {
   const prefix = `${manualName}.`;
-  return toolName.startsWith(prefix) ? toolName.slice(prefix.length) : toolName;
+  if (toolName.startsWith(prefix)) return toolName.slice(prefix.length);
+  // Tools are filed under the SDK's sanitized manual id (e.g. "salesforce_mcp."),
+  // which differs from the config manual name — strip the leading "<manual>."
+  // segment regardless of exact spelling.
+  const dot = toolName.indexOf(".");
+  return dot === -1 ? toolName : toolName.slice(dot + 1);
 }
 
 async function buildManifest(configPath, onProgress = () => {}) {
@@ -247,9 +256,16 @@ async function main() {
   // Silence the UTCP SDK's own console chatter so the spinner stays clean.
   const original = { log: console.log, info: console.info, warn: console.warn, error: console.error };
   console.log = console.info = console.warn = console.error = () => {};
+  // Keep the spinner message within the terminal width. clack only erases a
+  // single row between frames, so a message that wraps leaves the previous
+  // frames behind — clamp it to one line so the spinner stays put.
+  const fitLine = (msg) => {
+    const max = Math.max(16, (process.stdout.columns || 80) - 8);
+    return msg.length > max ? msg.slice(0, max - 1) + "…" : msg;
+  };
   let manifest;
   try {
-    manifest = await buildManifest(configPath, (msg) => spin.message(msg));
+    manifest = await buildManifest(configPath, (msg) => spin.message(fitLine(msg)));
   } finally {
     Object.assign(console, original);
   }
@@ -263,6 +279,26 @@ async function main() {
   const server = createServer(manifest);
   const port = await listenWithFallback(server, host, preferredPort);
   const url = `http://${host}:${port}/`;
+
+  // Ctrl+C / SIGTERM: close the HTTP server and force-exit. Discovery spawns
+  // child MCP processes and isolated-vm holds worker threads, which keep the
+  // event loop alive — without an explicit exit, the default SIGINT just hangs.
+  let shuttingDown = false;
+  const shutdown = () => {
+    if (shuttingDown) process.exit(0);
+    shuttingDown = true;
+    try {
+      outro("Stopping…");
+    } catch {
+      /* clack may already be torn down */
+    }
+    server.close();
+    // Don't wait on lingering child stdio handles — exit now. Children exit on
+    // their own when their stdin pipe closes.
+    process.exit(0);
+  };
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
 
   note(
     `${url}\n\n${manifest.manualCount} manuals · ${manifest.toolCount} tools` + (noOpen ? "" : "\nOpening your browser…"),

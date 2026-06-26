@@ -11,3 +11,15 @@ graphify-out/cost.json         # local token tracking, not useful to share
 
 # local-only scratch / learnings notes
 tasks/
+
+# local/generated artifacts
+codedb.snapshot
+.specstory/
+
+# isolated git worktrees (native/Superpowers) — never track
+.worktrees/
+
+# local instance / personal data — keep out of the public repo
+.instance/
+**/.instance/
+cresa-brokers.json
