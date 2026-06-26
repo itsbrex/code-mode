@@ -29,6 +29,12 @@ export function parseArgs(argv) {
   const risk = val("--risk");
   const only = val("--only");
   const home = process.env.HOME || "";
+  // Path overrides let strip/eject (which otherwise write only the real host
+  // configs) be rehearsed on copies. Default to the real per-host locations.
+  const paths = defaultHostPaths(home);
+  if (val("--claude-code-path")) paths.claudeCode = val("--claude-code-path");
+  if (val("--claude-desktop-path")) paths.claudeDesktop = val("--claude-desktop-path");
+  if (val("--codex-path")) paths.codex = val("--codex-path");
   return {
     apply: has("--apply"),
     stripHost: has("--strip-host"),
@@ -38,7 +44,7 @@ export function parseArgs(argv) {
     pins: argv.reduce((acc, a, i) => (a === "--pin" && argv[i + 1] ? [...acc, argv[i + 1]] : acc), []),
     eject: val("--eject") ? val("--eject").split(",").map((s) => s.trim()).filter(Boolean) : null,
     to: val("--to") ? val("--to").split(",").map((s) => s.trim()).filter(Boolean) : ["claude-code"],
-    paths: defaultHostPaths(home),
+    paths,
     utcpPath: safeResolveConfigPath(),
     backupRoot: path.join(home, ".host-import-backups"),
   };

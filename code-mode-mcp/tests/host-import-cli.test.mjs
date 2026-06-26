@@ -33,6 +33,21 @@ test("parseArgs reads flags", () => {
   assert.deepEqual(a.only, ["memory", "github"]);
 });
 
+test("parseArgs host-path overrides replace defaults (for safe strip/eject rehearsal)", () => {
+  const a = parseArgs([
+    "--claude-code-path", "/tmp/cc.json",
+    "--claude-desktop-path", "/tmp/cd.json",
+    "--codex-path", "/tmp/cx.toml",
+  ]);
+  assert.equal(a.paths.claudeCode, "/tmp/cc.json");
+  assert.equal(a.paths.claudeDesktop, "/tmp/cd.json");
+  assert.equal(a.paths.codex, "/tmp/cx.toml");
+  // unset overrides keep the real default locations
+  const d = parseArgs([]);
+  assert.ok(d.paths.claudeCode.endsWith("/.claude.json"));
+  assert.ok(d.paths.codex.endsWith("/.codex/config.toml"));
+});
+
 test("run dry-run produces a plan and writes nothing", () => {
   const fx = fixture();
   const opts = { ...parseArgs([]), paths: { claudeCode: fx.claudeCode, claudeDesktop: fx.claudeDesktop, codex: fx.codex }, utcpPath: fx.utcpPath, backupRoot: fx.backupRoot };

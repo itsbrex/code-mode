@@ -26,7 +26,23 @@ UTCP_CONFIG_PATH=/abs/hide-some.utcp_config.json npm run host-import -- --apply
 # Eject: move UTCP manual(s) back out into host config(s) as standard MCP servers
 ... npm run host-import -- --eject salesforce-mcp --to claude-code
 ... npm run host-import -- --eject zoominfo-mcp,databar-mcp --to claude-code,codex
+
+# Host-path overrides — rehearse strip/eject on COPIES instead of real configs
+... npm run host-import -- --apply --strip-host \
+    --claude-code-path /tmp/cc.json --codex-path /tmp/cx.toml --claude-desktop-path /tmp/cd.json
 ```
+
+## Safe testing
+
+`--apply` only ever writes the UTCP config (`UTCP_CONFIG_PATH`); host configs are
+read-only in that mode, so applying to a throwaway UTCP path is always safe.
+
+`--strip-host` and `--eject`, by contrast, write the *real* host configs by
+default. To rehearse them without touching your live `~/.claude.json` /
+`~/.codex/config.toml` / Claude Desktop config, copy those files somewhere and
+pass `--claude-code-path` / `--codex-path` / `--claude-desktop-path` to point at
+the copies. (Every write is still backed up under `~/.host-import-backups/`
+regardless.)
 
 ## Risk tags
 - **safe** — stdio server (1:1 manual) or a remote server with no auth headers.
