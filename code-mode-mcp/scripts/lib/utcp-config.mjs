@@ -25,6 +25,10 @@ import "@utcp/file";
 import { UtcpClientConfigSerializer, ensureCorePluginsInitialized } from "@utcp/sdk";
 import { CodeModeUtcpClient } from "@utcp/code-mode";
 
+// Flags that consume the FOLLOWING token as their value, so that value must not
+// be mistaken for the positional config path (e.g. `--port 7821`, `--host ::1`).
+const VALUE_FLAGS = new Set(["--port", "--host"]);
+
 /** Parse a config path from argv: first positional, or `--config <path>` / `-c <path>` / `--config=<path>`. */
 export function parseCliConfigArg(argv) {
   const args = argv.slice(2);
@@ -35,6 +39,12 @@ export function parseCliConfigArg(argv) {
     }
     if (arg.startsWith("--config=")) {
       return arg.slice("--config=".length);
+    }
+    // Skip a value-taking flag's value so `--port 7821` doesn't read "7821" as
+    // the config path (the bug that shadowed UTCP_CONFIG_PATH/_FILE).
+    if (VALUE_FLAGS.has(arg)) {
+      i += 1;
+      continue;
     }
     if (!arg.startsWith("-")) {
       return arg;
