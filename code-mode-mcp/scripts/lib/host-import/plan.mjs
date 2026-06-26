@@ -1,0 +1,62 @@
+import { existsSync, readFileSync } from "node:fs";
+import { convertServer } from "./to-utcp.mjs";
+
+// Mirror of scripts/lib/utcp-config.mjs toManualIdentifier — the UTCP SDK files
+// tools under this sanitized form, so dedup must compare both spellings.
+export function toManualIdentifier(name) {
+  return String(name).replace(/[^a-zA-Z0-9_]/g, "_").replace(/^[0-9]/, "_$&");
+}
+
+export function existingManualNames(utcpConfig) {
+  const templates = Array.isArray(utcpConfig?.manual_call_templates) ? utcpConfig.manual_call_templates : [];
+  const set = new Set();
+  for (const t of templates) {
+    if (typeof t?.name === "string") {
+      set.add(t.name);
+      set.add(toManualIdentifier(t.name));
+    }
+  }
+  return set;
+}
+
+export function buildPlan(hosts, utcpConfig) {
+  const existing = existingManualNames(utcpConfig);
+  const items = hosts.map((entry) => {
+    const conv = convertServer(entry.name, entry.server);
+    const duplicate = existing.has(entry.name) || existing.has(toManualIdentifier(entry.name));
+    return {
+      host: entry.host,
+      scope: entry.scope,
+      projectKey: entry.projectKey,
+      name: entry.name,
+      risk: conv.risk,
+      reason: duplicate ? "already present in the UTCP config" : conv.reason,
+      duplicate,
+      manual: conv.ok ? conv.manual : undefined,
+      source: entry,
+    };
+  });
+  return { items, existingNames: [...existing] };
+}
+
+export function selectManuals(plan, { risks = ["safe", "partial"] } = {}) {
+  const allow = new Set(risks);
+  const seen = new Set();
+  const out = [];
+  for (const item of plan.items) {
+    if (item.duplicate || !item.manual || !allow.has(item.risk)) continue;
+    if (seen.has(item.name)) continue; // same server in multiple hosts → emit once
+    seen.add(item.name);
+    out.push(item.manual);
+  }
+  return out;
+}
+
+export function readUtcpConfig(path) {
+  if (!existsSync(path)) return { manual_call_templates: [] };
+  try {
+    return JSON.parse(readFileSync(path, "utf8"));
+  } catch {
+    return { manual_call_templates: [] };
+  }
+}
