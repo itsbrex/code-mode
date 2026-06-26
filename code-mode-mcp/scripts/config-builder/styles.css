@@ -1217,3 +1217,136 @@ body.is-resizing {
     transition-duration: 0.001ms !important;
   }
 }
+
+/* ----------------------------------------------------- Host Import panel */
+body.view-host .toolbar,
+body.view-host .layout,
+body.view-host [data-tools-only] { display: none !important; }
+body.view-host #hostImportToggle {
+  background: var(--accent-quiet);
+  border-color: var(--accent-line);
+  color: var(--accent-strong);
+}
+body.hi-busy #hostImport { opacity: 0.55; pointer-events: none; }
+
+.host-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  padding: var(--s-4) var(--s-5);
+  max-width: 1120px;
+  width: 100%;
+  margin: 0 auto;
+}
+.host-panel__bar {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-3);
+  padding-bottom: var(--s-2);
+  background: var(--canvas);
+  border-bottom: 1px solid var(--line);
+}
+.host-panel__title { display: flex; align-items: center; gap: var(--s-2); font-weight: 600; }
+.host-panel__title .ico { color: var(--accent); }
+.host-panel__sub {
+  margin-left: var(--s-2);
+  color: var(--ink-3);
+  font: 400 var(--t-micro) / 1 var(--font-mono);
+}
+.host-panel__actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); }
+.host-panel__div { width: 1px; height: 20px; margin: 0 var(--s-1); background: var(--line); }
+
+.host-panel__legend { display: flex; flex-wrap: wrap; gap: var(--s-3); color: var(--ink-3); font-size: var(--t-micro); }
+.hi-legend__item { display: inline-flex; align-items: center; gap: var(--s-1); }
+
+.host-panel__list { display: flex; flex-direction: column; gap: var(--s-4); }
+.host-panel__empty { padding: var(--s-5); color: var(--ink-3); text-align: center; }
+
+.hi-group { display: flex; flex-direction: column; gap: 3px; }
+.hi-group__head {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  padding: var(--s-1) var(--s-2);
+  color: var(--ink-3);
+  font-size: var(--t-micro);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.hi-group__count {
+  padding: 0 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-pill);
+  color: var(--ink-2);
+}
+
+.hi-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto auto auto;
+  align-items: center;
+  gap: var(--s-2);
+  padding: var(--s-2) var(--s-3);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-left-width: 2px;
+  border-radius: var(--r-1);
+  cursor: pointer;
+}
+.hi-row:hover { background: var(--surface-2); }
+.hi-row__check { width: 16px; height: 16px; accent-color: var(--accent); cursor: pointer; }
+.hi-row__name {
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: var(--t-sm);
+  color: var(--ink);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.hi-row--new { border-left-color: var(--accent); }
+.hi-row--federated { border-left-color: var(--pos); }
+.hi-row--pinned { border-left-color: var(--warn); }
+.hi-row--skip { opacity: 0.55; cursor: default; }
+
+.hi-row__pin {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--r-1);
+  color: var(--ink-3);
+  cursor: pointer;
+}
+.hi-row__pin:hover { background: var(--surface-3); color: var(--ink); }
+.hi-row__pin.is-on { color: var(--warn); }
+
+.hi-badge {
+  padding: 2px 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-pill);
+  color: var(--ink-2);
+  font-size: var(--t-micro);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.hi-badge--scope { color: var(--ink-3); font-weight: 400; font-family: var(--font-mono); }
+.hi-badge--new { color: var(--accent-strong); background: var(--accent-quiet); border-color: var(--accent-line); }
+.hi-badge--federated { color: var(--pos); background: var(--pos-quiet); border-color: var(--pos-line); }
+.hi-badge--pinned,
+.hi-badge--risk-partial {
+  color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 14%, transparent);
+  border-color: color-mix(in srgb, var(--warn) 32%, transparent);
+}
+.hi-badge--skip { color: var(--ink-3); }
+.hi-badge--risk-safe { color: var(--pos); background: var(--pos-quiet); border-color: var(--pos-line); }
+.hi-badge--risk-manual { color: var(--neg); background: var(--neg-quiet); border-color: var(--neg-line); }

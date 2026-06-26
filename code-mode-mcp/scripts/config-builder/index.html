@@ -34,6 +34,9 @@
       <symbol id="i-info" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9" /><path d="M12 11v5" /><path d="M12 7.6h.01" /></symbol>
       <symbol id="i-grip" viewBox="0 0 24 24" fill="currentColor" stroke="none"><circle cx="9" cy="6" r="1.5" /><circle cx="15" cy="6" r="1.5" /><circle cx="9" cy="12" r="1.5" /><circle cx="15" cy="12" r="1.5" /><circle cx="9" cy="18" r="1.5" /><circle cx="15" cy="18" r="1.5" /></symbol>
       <symbol id="i-trash" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16" /><path d="M9 7V5h6v2" /><path d="M6 7l1 13h10l1-13" /><path d="M10 11v6M14 11v6" /></symbol>
+      <symbol id="i-server" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="6" rx="1.5" /><rect x="4" y="14" width="16" height="6" rx="1.5" /><path d="M7.5 7h.01M7.5 17h.01" /></symbol>
+      <symbol id="i-pin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16v6" /><path d="M9 3h6l-1 8 3 2v2H7v-2l3-2-1-8z" /></symbol>
+      <symbol id="i-arrow-left" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M14 6l-6 6 6 6" /></symbol>
     </svg>
 
     <header class="topbar">
@@ -49,16 +52,20 @@
       </div>
 
       <div class="topbar__actions">
-        <button type="button" class="btn btn--ghost" id="previewToggle" aria-expanded="false" data-only="narrow" title="Show or hide the config preview">
+        <button type="button" class="btn btn--ghost" id="hostImportToggle" title="Migrate host MCP servers (Claude Code / Desktop / Codex) into code-mode, or strip them from the hosts">
+          <svg class="ico"><use href="#i-server" /></svg><span>Host&nbsp;Import</span>
+        </button>
+        <span class="topbar__div" data-tools-only aria-hidden="true"></span>
+        <button type="button" class="btn btn--ghost" id="previewToggle" aria-expanded="false" data-only="narrow" data-tools-only title="Show or hide the config preview">
           <svg class="ico"><use href="#i-eye" /></svg><span>Preview</span>
         </button>
-        <button type="button" class="btn btn--ghost" id="copyBtn" title="Copy the generated config JSON to the clipboard">
+        <button type="button" class="btn btn--ghost" id="copyBtn" data-tools-only title="Copy the generated config JSON to the clipboard">
           <svg class="ico"><use href="#i-copy" /></svg><span>Copy</span>
         </button>
-        <button type="button" class="btn btn--ghost" id="saveBtn" title="Save the config into ./configs/ next to where the server runs">
+        <button type="button" class="btn btn--ghost" id="saveBtn" data-tools-only title="Save the config into ./configs/ next to where the server runs">
           <svg class="ico"><use href="#i-save" /></svg><span>Save</span>
         </button>
-        <button type="button" class="btn btn--accent" id="downloadBtn" title="Download the config as the named .json file">
+        <button type="button" class="btn btn--accent" id="downloadBtn" data-tools-only title="Download the config as the named .json file">
           <svg class="ico"><use href="#i-download" /></svg><span>Download</span>
         </button>
       </div>
@@ -145,6 +152,28 @@
       </aside>
     </main>
 
+    <section id="hostImport" class="host-panel" aria-label="Host import" hidden>
+      <div class="host-panel__bar">
+        <div class="host-panel__title">
+          <button type="button" class="btn btn--icon" id="hiBack" title="Back to tool exclusion"><svg class="ico"><use href="#i-arrow-left" /></svg></button>
+          <svg class="ico"><use href="#i-server" /></svg>
+          <span>Host&nbsp;Import</span>
+          <span class="host-panel__sub" id="hiSummary">loading…</span>
+        </div>
+        <div class="host-panel__actions">
+          <button type="button" class="btn btn--ghost" id="hiRefresh" title="Re-scan the host configs"><svg class="ico"><use href="#i-reset" /></svg><span>Refresh</span></button>
+          <button type="button" class="btn btn--ghost" id="hiSelMigratable" title="Select every server that can be migrated">Select new</button>
+          <button type="button" class="btn btn--ghost" id="hiSelFederated" title="Select every server already federated (strippable)">Select federated</button>
+          <button type="button" class="btn btn--ghost" id="hiClear">Clear</button>
+          <span class="host-panel__div" aria-hidden="true"></span>
+          <button type="button" class="btn btn--accent" id="hiMigrate" title="Write the selected servers into the UTCP config (code-mode federates them)"><svg class="ico"><use href="#i-download" /></svg><span>Migrate&nbsp;→&nbsp;code-mode</span></button>
+          <button type="button" class="btn btn--neg" id="hiStrip" title="Remove the selected (already-federated) servers from the host configs"><svg class="ico"><use href="#i-trash" /></svg><span>Strip&nbsp;from&nbsp;hosts</span></button>
+        </div>
+      </div>
+      <div class="host-panel__legend" id="hiLegend"></div>
+      <div class="host-panel__list" id="hiList"><p class="host-panel__empty">Scanning host configs…</p></div>
+    </section>
+
     <div class="bulkbar" id="bulkbar" role="region" aria-label="Selection actions" hidden>
       <span class="bulkbar__count"><b id="selCount">0</b> selected</span>
       <div class="bulkbar__actions">
@@ -159,5 +188,6 @@
     <div class="toasts" id="toasts" aria-live="polite" aria-atomic="false"></div>
 
     <script type="module" src="/app.js"></script>
+    <script type="module" src="/host-import.js"></script>
   </body>
 </html>

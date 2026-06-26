@@ -21,8 +21,9 @@
  */
 
 import http from "http";
-import { promises as fs } from "fs";
+import { promises as fs, existsSync, readFileSync, writeFileSync } from "fs";
 import path from "path";
+import os from "os";
 import process from "process";
 import { spawn } from "child_process";
 import { fileURLToPath } from "url";
@@ -30,6 +31,14 @@ import { fileURLToPath } from "url";
 import { intro, outro, note, log, spinner } from "@clack/prompts";
 
 import { resolveConfigPath, discoverManuals } from "./lib/utcp-config.mjs";
+// Host-import core (shared with the `npm run host-import` CLI). The web panel
+// drives these to migrate host MCP servers into the UTCP config and strip them
+// from the live host configs — every mutation is backup-on-write.
+import { readAllHosts, defaultHostPaths } from "./lib/host-import/read-hosts.mjs";
+import { buildPlan, readUtcpConfig, existingManualNames } from "./lib/host-import/plan.mjs";
+import { addManualsToUtcp, stripFromClaudeJson, stripFromCodexToml } from "./lib/host-import/apply.mjs";
+import { loadPins } from "./lib/host-import/pins.mjs";
+import { DENYLIST } from "./lib/host-import/to-utcp.mjs";
 // Run via `tsx` (see package.json `config-builder` script): tsx transpiles the
 // TypeScript entry on the fly under Node, so no `tsc`/`dist` build is needed to
 // launch. (Node — not Bun — because the discovery pipeline loads the native
@@ -146,7 +155,101 @@ function readBody(req, limitBytes = 8 * 1024 * 1024) {
   });
 }
 
-function createServer(manifest) {
+// --- Host import (live migrate / strip over the real host configs) -----------
+
+function planItemView(it) {
+  return {
+    host: it.host,
+    scope: it.scope,
+    projectKey: it.projectKey ?? null,
+    name: it.name,
+    risk: it.risk,
+    reason: it.reason,
+    duplicate: it.duplicate,
+    pinned: it.pinned,
+    // a row is migratable when it converts cleanly and isn't already federated/pinned
+    canMigrate: Boolean(it.manual) && !it.duplicate && !it.pinned
+  };
+}
+
+function buildHostPlan(ctx) {
+  const hosts = readAllHosts(ctx.hostPaths);
+  const utcp = readUtcpConfig(ctx.configPath);
+  const pins = loadPins(ctx.pinsFile, []);
+  return buildPlan(hosts, utcp, pins);
+}
+
+function hostPlanView(ctx) {
+  const plan = buildHostPlan(ctx);
+  return {
+    utcpPath: ctx.configPath,
+    hostPaths: ctx.hostPaths,
+    items: plan.items.map(planItemView),
+    pins: loadPins(ctx.pinsFile, []).map((p) => (p.host && p.host !== "*" ? `${p.host}:${p.name}` : p.name))
+  };
+}
+
+// Migrate the named host servers into the UTCP config (deduped, backup-on-write).
+function applyImport(ctx, names) {
+  const want = new Set(Array.isArray(names) ? names : []);
+  const plan = buildHostPlan(ctx);
+  const seen = new Set();
+  const manuals = [];
+  for (const it of plan.items) {
+    if (!want.has(it.name) || it.duplicate || it.pinned || !it.manual) continue;
+    if (seen.has(it.name)) continue;
+    seen.add(it.name);
+    manuals.push(it.manual);
+  }
+  if (!manuals.length) return { added: [], skipped: [], backup: null };
+  return addManualsToUtcp(ctx.configPath, manuals, ctx.backupRoot);
+}
+
+// Strip the given host entries from their real configs. Guarded: never strips a
+// denylisted bridge (code-mode/*-code-mode), and only strips servers actually
+// federated in the UTCP config (so we never delete a host server code-mode isn't
+// already providing). Grouped by file so each config is backed up + written once.
+function stripHosts(ctx, entries) {
+  const federated = existingManualNames(readUtcpConfig(ctx.configPath));
+  const groups = new Map();
+  const refused = [];
+  for (const e of Array.isArray(entries) ? entries : []) {
+    if (!e || typeof e.name !== "string") continue;
+    if (DENYLIST.has(e.name)) { refused.push({ name: e.name, reason: "denylisted bridge" }); continue; }
+    if (!federated.has(e.name)) { refused.push({ name: e.name, reason: "not federated in UTCP" }); continue; }
+    const scope = e.scope === "project" ? "project" : "global";
+    const key = `${e.host}|${scope}|${e.projectKey || ""}`;
+    if (!groups.has(key)) groups.set(key, { host: e.host, scope, projectKey: e.projectKey || undefined, names: [] });
+    groups.get(key).names.push(e.name);
+  }
+  const stripped = [];
+  for (const g of groups.values()) {
+    let r;
+    if (g.host === "codex") r = stripFromCodexToml(ctx.hostPaths.codex, g.names, ctx.backupRoot);
+    else if (g.host === "claude-desktop") r = stripFromClaudeJson(ctx.hostPaths.claudeDesktop, g.names, ctx.backupRoot, { scope: "global" });
+    else r = stripFromClaudeJson(ctx.hostPaths.claudeCode, g.names, ctx.backupRoot, { scope: g.scope, projectKey: g.projectKey });
+    stripped.push({ host: g.host, scope: g.scope, projectKey: g.projectKey ?? null, removed: r.removed, backup: r.backup });
+  }
+  return { stripped, refused };
+}
+
+// Pin/unpin a server (per-host or any-host) in ~/.host-import-pins.json.
+function setPin(ctx, name, host, pinned) {
+  let data = { pins: [] };
+  if (existsSync(ctx.pinsFile)) {
+    try { data = JSON.parse(readFileSync(ctx.pinsFile, "utf-8")); } catch { data = { pins: [] }; }
+  }
+  const asStr = (p) => (typeof p === "string" ? p : p && p.host && p.host !== "*" ? `${p.host}:${p.name}` : p && p.name) || "";
+  const set = new Set((Array.isArray(data.pins) ? data.pins : []).map(asStr).filter(Boolean));
+  const key = host && host !== "*" ? `${host}:${name}` : name;
+  if (pinned) set.add(key);
+  else { set.delete(key); set.delete(name); }
+  const out = { ...data, pins: [...set] };
+  writeFileSync(ctx.pinsFile, JSON.stringify(out, null, 2) + "\n");
+  return { pins: out.pins };
+}
+
+function createServer(manifest, ctx) {
   return http.createServer(async (req, res) => {
     try {
       const url = new URL(req.url, "http://localhost");
@@ -181,6 +284,34 @@ function createServer(manifest) {
         const outPath = path.join(outDir, filename);
         await fs.writeFile(outPath, JSON.stringify(payload.config, null, 2) + "\n");
         sendJson(res, 200, { ok: true, path: outPath });
+        return;
+      }
+
+      // --- Host import API (live; reads/writes the real host + UTCP configs) ---
+      if (ctx && req.method === "GET" && pathname === "/api/host-plan") {
+        sendJson(res, 200, hostPlanView(ctx));
+        return;
+      }
+
+      if (ctx && req.method === "POST" && (pathname === "/api/host-apply" || pathname === "/api/host-strip" || pathname === "/api/host-pin")) {
+        const raw = await readBody(req);
+        let body;
+        try { body = JSON.parse(raw); } catch { sendJson(res, 400, { error: "Invalid JSON body" }); return; }
+
+        if (pathname === "/api/host-apply") {
+          const result = applyImport(ctx, body && body.names);
+          sendJson(res, 200, { ok: true, ...result, plan: hostPlanView(ctx) });
+          return;
+        }
+        if (pathname === "/api/host-strip") {
+          const result = stripHosts(ctx, body && body.entries);
+          sendJson(res, 200, { ok: true, ...result, plan: hostPlanView(ctx) });
+          return;
+        }
+        // /api/host-pin
+        if (!body || typeof body.name !== "string") { sendJson(res, 400, { error: "Missing 'name'" }); return; }
+        const result = setPin(ctx, body.name, body.host || "*", body.pinned !== false);
+        sendJson(res, 200, { ok: true, ...result, plan: hostPlanView(ctx) });
         return;
       }
 
@@ -276,7 +407,14 @@ async function main() {
     log.warn(`${empty.length} manual(s) returned no tools (failed to launch or genuinely empty): ${empty.map((m) => m.name).join(", ")}`);
   }
 
-  const server = createServer(manifest);
+  const home = process.env.HOME || os.homedir();
+  const hostImportCtx = {
+    configPath,
+    hostPaths: defaultHostPaths(home),
+    backupRoot: path.join(home, ".host-import-backups"),
+    pinsFile: path.join(home, ".host-import-pins.json")
+  };
+  const server = createServer(manifest, hostImportCtx);
   const port = await listenWithFallback(server, host, preferredPort);
   const url = `http://${host}:${port}/`;
 
