@@ -48,6 +48,19 @@ test("parseArgs host-path overrides replace defaults (for safe strip/eject rehea
   assert.ok(d.paths.codex.endsWith("/.codex/config.toml"));
 });
 
+test("parseArgs takes utcpPath from env, never from a flag value (no argv misparse)", () => {
+  const prev = process.env.UTCP_CONFIG_PATH;
+  process.env.UTCP_CONFIG_PATH = "/tmp/my.utcp_config.json";
+  try {
+    // `--only memory` etc. must NOT be mistaken for a positional config path.
+    const a = parseArgs(["--apply", "--strip-host", "--only", "memory", "--risk", "safe"]);
+    assert.equal(a.utcpPath, "/tmp/my.utcp_config.json");
+  } finally {
+    if (prev === undefined) delete process.env.UTCP_CONFIG_PATH;
+    else process.env.UTCP_CONFIG_PATH = prev;
+  }
+});
+
 test("run dry-run produces a plan and writes nothing", () => {
   const fx = fixture();
   const opts = { ...parseArgs([]), paths: { claudeCode: fx.claudeCode, claudeDesktop: fx.claudeDesktop, codex: fx.codex }, utcpPath: fx.utcpPath, backupRoot: fx.backupRoot };

@@ -7,17 +7,27 @@ import { buildPlan, selectManuals, readUtcpConfig } from "./lib/host-import/plan
 import { addManualsToUtcp, stripFromClaudeJson, stripFromCodexToml } from "./lib/host-import/apply.mjs";
 import { loadPins } from "./lib/host-import/pins.mjs";
 import { ejectManuals } from "./lib/host-import/eject.mjs";
-import { resolveConfigPath } from "./lib/utcp-config.mjs";
+import dotenv from "dotenv";
 
-// resolveConfigPath throws when no UTCP_CONFIG_PATH/UTCP_CONFIG_FILE is set
-// (env or .env). Tests construct opts with an explicit utcpPath, so swallow the
-// throw here and let main()'s --apply guard surface a clear message instead.
+// Resolve the UTCP config path from env / .env ONLY (env wins over .env), never
+// from argv. We deliberately avoid utcp-config.resolveConfigPath here: it also
+// scans process.argv for a positional config path, which would mistake a flag
+// value (e.g. `--only memory`, `--risk safe`) for the path. host-import takes the
+// path solely from UTCP_CONFIG_PATH / UTCP_CONFIG_FILE; returns "" if unset so
+// main()'s --apply guard can surface a clear message.
 function safeResolveConfigPath() {
+  let fromDotenv = {};
   try {
-    return resolveConfigPath();
+    fromDotenv = dotenv.config().parsed ?? {};
   } catch {
-    return "";
+    fromDotenv = {};
   }
+  const p =
+    process.env.UTCP_CONFIG_PATH ||
+    process.env.UTCP_CONFIG_FILE ||
+    fromDotenv.UTCP_CONFIG_PATH ||
+    fromDotenv.UTCP_CONFIG_FILE;
+  return p ? path.resolve(p) : "";
 }
 
 export function parseArgs(argv) {
