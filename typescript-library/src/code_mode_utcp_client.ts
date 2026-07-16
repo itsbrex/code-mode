@@ -32,14 +32,14 @@ You have access to a CodeModeUtcpClient that allows you to execute TypeScript co
 
 ### 3. Code Execution Guidelines
 **When writing code for \`callToolChain\`:**
-- Use \`manual.tool({ param: value })\` syntax for all tool calls (synchronous, no await needed)
-- Tools are synchronous functions - the main process handles async operations internally
+- Your code runs as the body of an \`async function\`. Use \`return\` to return the final result.
+- Use \`manual.tool({ param: value })\` syntax for all tool calls. Tool calls are synchronous from your perspective (no await needed) - the host bridges async work transparently. \`await manual.tool(...)\` also works if you prefer.
+- \`async\`/\`await\` syntax is supported. Top-level \`await\` works directly inside your code.
 - You have access to standard JavaScript globals: \`console\`, \`JSON\`, \`Math\`, \`Date\`, etc.
-- All console output (\`console.log\`, \`console.error\`, etc.) is automatically captured and returned
-- Build properly structured input objects based on interface definitions
-- Handle errors appropriately with try/catch blocks
-- Chain tool calls by using results from previous calls
-- Use \`return\` to return the final result from your code
+- All console output (\`console.log\`, \`console.error\`, etc.) is automatically captured and returned alongside the \`result\`.
+- Build properly structured input objects based on interface definitions.
+- Handle errors appropriately with try/catch blocks.
+- Chain tool calls by using results from previous calls.
 
 ### 4. Best Practices
 - **Discover first, code second**: Always explore available tools before writing execution code
@@ -187,7 +187,8 @@ ${interfaces.join('\n\n')}`;
     
     // Create isolated VM
     const isolate = new ivm.Isolate({ memoryLimit });
-    
+    let timeoutHandle: NodeJS.Timeout | undefined;
+
     try {
       const context = await isolate.createContext();
       const jail = context.global;
@@ -204,25 +205,63 @@ ${interfaces.join('\n\n')}`;
       // Set up utility functions and interfaces
       await this.setupUtilities(isolate, context, jail, tools);
       
-      // Compile and run the user code - code is SYNC since tools use applySyncPromise
-      // Wrap result in JSON.stringify to transfer objects out of isolate
+      // User code runs as the body of an async function so `return` and top-level
+      // `await` work naturally. isolated-vm's `script.run()` does not propagate the
+      // Promise from an async script, so we transfer the resolved value back via a
+      // callback Reference once the inner async function settles.
+      let resolveResult!: (json: string) => void;
+      let rejectResult!: (err: Error) => void;
+      const resultPromise = new Promise<string>((res, rej) => {
+        resolveResult = res;
+        rejectResult = rej;
+      });
+
+      await jail.set(
+        '__resolveResult',
+        new ivm.Reference((jsonStr: string) => resolveResult(jsonStr))
+      );
+      await jail.set(
+        '__rejectResult',
+        new ivm.Reference((errStr: string) => rejectResult(new Error(errStr)))
+      );
+
       const wrappedCode = `
-        (function() {
-          var __result = (function() {
-            ${code}
-          })();
-          return JSON.stringify({ __result: __result });
+        (async function() {
+          try {
+            const __result = await (async function() {
+              ${code}
+            })();
+            __resolveResult.applySync(undefined, [JSON.stringify({ __result: __result === undefined ? null : __result })]);
+          } catch (e) {
+            __rejectResult.applySync(undefined, [String(e && e.stack ? e.stack : e)]);
+          }
         })()
       `;
-      
+
+      // Set up the host-side timeout race BEFORE running the script so the
+      // resultPromise always has a handler attached - otherwise an early
+      // rejection from inside the isolate can race the await below and surface
+      // as an unhandled rejection.
+      const timeoutPromise = new Promise<string>((_, rej) => {
+        timeoutHandle = setTimeout(
+          () => rej(new Error(`Script execution timeout after ${timeout}ms`)),
+          timeout
+        );
+      });
+      const settledPromise = Promise.race([resultPromise, timeoutPromise]);
+      // Swallow late rejections of the loser promise to avoid PromiseRejectionHandledWarning.
+      resultPromise.catch(() => {});
+      timeoutPromise.catch(() => {});
+
       const script = await isolate.compileScript(wrappedCode);
-      const resultJson = await script.run(context, { timeout });
-      
-      // Parse the result from JSON
-      const result = typeof resultJson === 'string' 
-        ? JSON.parse(resultJson).__result
-        : resultJson;
-      
+      // Kick off the async IIFE. `script.run` returns once the synchronous portion
+      // of the wrapper completes (i.e. immediately, since the body is async).
+      // `script.run` may itself reject if the isolate refuses to surface the
+      // returned Promise; treat that as benign as long as the callback fires.
+      script.run(context, { timeout }).catch(() => {});
+
+      const resultJson = await settledPromise;
+      const result = JSON.parse(resultJson).__result;
       return { result, logs };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
@@ -231,6 +270,7 @@ ${interfaces.join('\n\n')}`;
         logs: [...logs, `[ERROR] Code execution failed: ${errorMessage}`] 
       };
     } finally {
+      if (timeoutHandle) clearTimeout(timeoutHandle);
       isolate.dispose();
     }
   }

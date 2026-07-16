@@ -245,20 +245,25 @@ Tools can dynamically discover and adapt to available interfaces:
 ```python
 result = await client.call_tool_chain('''
 # Discover available tools at runtime
-print('Available interfaces:', __interfaces)
+print('Available interfaces:', interfaces)
 
 # Get specific tool interface for validation
-pr_interface = __get_tool_interface('github.get_pull_request')
+pr_interface = get_tool_interface('github.get_pull_request')
 print('PR tool expects:', pr_interface)
 
 # Use interface info for dynamic workflows
-has_slack_tools = 'namespace slack' in __interfaces
+has_slack_tools = 'namespace slack' in interfaces
 if has_slack_tools:
     await slack.post_message(channel='#dev', text='Analysis complete')
 
 return {"toolsAvailable": has_slack_tools}
 ''')
 ```
+
+> Note: `interfaces` and `get_tool_interface` are exposed under plain names
+> because the RestrictedPython sandbox rejects identifiers that start with an
+> underscore at compile time. Earlier versions documented `__interfaces` /
+> `__get_tool_interface`, which were unreachable from user code.
 
 ### **Context-Efficient Data Processing**
 Process large datasets without bloating the model's context:
@@ -361,9 +366,9 @@ response = client.chat.completions.create(
 ```
 
 **The template provides comprehensive guidance on:**
-- Tool discovery workflow (`search_tools` → `__interfaces` → `call_tool_chain`)
+- Tool discovery workflow (`search_tools` → `interfaces` → `call_tool_chain`)
 - Hierarchical access patterns (`manual.tool()` syntax)  
-- Interface introspection (`__get_tool_interface()`)
+- Interface introspection (`get_tool_interface()`)
 - Error handling and best practices
 
 ---

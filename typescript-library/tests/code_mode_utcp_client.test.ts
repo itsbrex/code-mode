@@ -580,6 +580,75 @@ describe('CodeModeUtcpClient', () => {
     expect(testResults.greetCalled.formal).toBe(false);
   });
 
+  describe('async result handling (issue #33)', () => {
+    test('returns value from explicit async IIFE', async () => {
+      const code = `
+        return await (async () => {
+          const r = test_tools.add({ a: 7, b: 8 });
+          return r;
+        })();
+      `;
+      const { result } = await client.callToolChain(code);
+      expect(result).toBeDefined();
+      expect(result.result).toBe(15);
+      expect(result.operation).toBe('addition');
+    });
+
+    test('supports top-level await syntax', async () => {
+      const code = `
+        const a = test_tools.add({ a: 3, b: 4 });
+        const b = await Promise.resolve(test_tools.add({ a: a.result, b: a.result }));
+        return b;
+      `;
+      const { result } = await client.callToolChain(code);
+      expect(result.result).toBe(14);
+    });
+
+    test('returns value alongside console output', async () => {
+      const code = `
+        console.log('inside async');
+        const r = await Promise.resolve(test_tools.add({ a: 100, b: 200 }));
+        return r;
+      `;
+      const { result, logs } = await client.callToolChain(code);
+      expect(result.result).toBe(300);
+      expect(logs).toContain('inside async');
+    });
+
+    test('null return value round-trips as null', async () => {
+      const { result } = await client.callToolChain(`return null;`);
+      expect(result).toBeNull();
+    });
+
+    test('undefined return value normalises to null', async () => {
+      const { result } = await client.callToolChain(`return;`);
+      expect(result).toBeNull();
+    });
+
+    test('rejected async work surfaces as error log without hanging', async () => {
+      const code = `
+        await (async () => { throw new Error('async boom'); })();
+        return 'unreached';
+      `;
+      const { result, logs } = await client.callToolChain(code, 5000);
+      expect(result).toBeNull();
+      expect(logs.some(l => l.includes('async boom'))).toBe(true);
+    });
+
+    test('host timeout fires when user code hangs in a promise', async () => {
+      const code = `
+        await new Promise(() => {});
+        return 'never';
+      `;
+      const start = Date.now();
+      const { result, logs } = await client.callToolChain(code, 1500);
+      const elapsed = Date.now() - start;
+      expect(result).toBeNull();
+      expect(logs.some(l => l.toLowerCase().includes('timeout'))).toBe(true);
+      expect(elapsed).toBeLessThan(5000);
+    });
+  });
+
   test('should provide agent prompt template', () => {
     const promptTemplate = CodeModeUtcpClient.AGENT_PROMPT_TEMPLATE;
     

@@ -52,6 +52,15 @@ const TOOL_NAMES = [
 const DEFAULT_LIST_TOOLS_LIMIT = 100;
 const MAX_LIST_TOOLS_LIMIT = 500;
 
+// Read-only bridge tools advertise MCP annotations so hosts can treat them as
+// side-effect-free (ported from upstream's readOnlyHint change onto our
+// getToolDefinitions architecture).
+const READ_ONLY_ANNOTATIONS = {
+  readOnlyHint: true,
+  openWorldHint: false,
+  idempotentHint: true
+} as const;
+
 let utcpClient: CodeModeUtcpClient | null = null;
 let exclusionRegistry: ToolExclusionRegistry = new Map();
 
@@ -75,6 +84,7 @@ interface ToolDefinition {
   title: string;
   description: string;
   inputSchema: Record<string, z.ZodTypeAny>;
+  annotations?: { readOnlyHint?: boolean; openWorldHint?: boolean; idempotentHint?: boolean };
   handler: (input: any) => Promise<{ content: ContentBlock[]; isError?: boolean }>;
 }
 
@@ -531,6 +541,7 @@ export function getToolDefinitions(options: ToolRuntimeOptions = {}): ToolDefini
     },
     {
       name: "search_tools",
+      annotations: READ_ONLY_ANNOTATIONS,
       title: "Search UTCP Tools",
       description: "Search registered UTCP tools and return access names plus full TypeScript interfaces.",
       inputSchema: {
@@ -551,6 +562,7 @@ export function getToolDefinitions(options: ToolRuntimeOptions = {}): ToolDefini
     },
     {
       name: "list_tools",
+      annotations: READ_ONLY_ANNOTATIONS,
       title: "List Registered UTCP Tools",
       description: "List registered UTCP tools with compact, paginated names by default.",
       inputSchema: {
@@ -595,6 +607,7 @@ export function getToolDefinitions(options: ToolRuntimeOptions = {}): ToolDefini
     },
     {
       name: "tools_info",
+      annotations: READ_ONLY_ANNOTATIONS,
       title: "Inspect UTCP Tool Interfaces",
       description: "Return full UTCP tool interface details for a set of tool names or access names.",
       inputSchema: {
@@ -630,6 +643,7 @@ export function getToolDefinitions(options: ToolRuntimeOptions = {}): ToolDefini
     },
     {
       name: "get_required_variables_for_tool",
+      annotations: READ_ONLY_ANNOTATIONS,
       title: "Get Required Variables for a UTCP Tool",
       description: "Return the required environment variables for a registered UTCP tool.",
       inputSchema: {
@@ -707,6 +721,7 @@ export function registerMcpTools(server: McpServer, options: ToolRuntimeOptions 
       {
         title: definition.title,
         description: definition.description,
+        annotations: definition.annotations,
         // Cast is types-only: SDK 1.29 regressed registerTool's generic
         // inference over the Zod inputSchema shape, producing TS2589
         // ("Type instantiation is excessively deep"). Casting just the

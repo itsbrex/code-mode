@@ -1,6 +1,6 @@
 {
   "name": "@utcp/code-mode-mcp",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Model Context Protocol (MCP) server for UTCP Code Mode - Execute TypeScript code with direct tool access",
   "type": "module",
   "main": "dist/index.js",
@@ -20,7 +20,11 @@
     "generate-exclusion-configs": "node scripts/generate-exclusion-configs.mjs",
     "config-builder": "tsx scripts/config-builder-server.mjs",
     "config-builder:no-open": "tsx scripts/config-builder-server.mjs --no-open",
-    "host-import": "tsx scripts/host-import-cli.mjs"
+    "host-import": "tsx scripts/host-import-cli.mjs",
+    "dev:register": "node scripts/dev-register.mjs",
+    "dev:unregister": "node scripts/dev-unregister.mjs",
+    "plan": "bun scripts/plan-server.mjs",
+    "plan:no-open": "bun scripts/plan-server.mjs --no-open"
   },
   "keywords": [
     "utcp",

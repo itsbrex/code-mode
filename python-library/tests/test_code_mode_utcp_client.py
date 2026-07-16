@@ -184,6 +184,32 @@ return weather_data
         assert "Weather result:" in result["logs"][0]
 
     @pytest.mark.asyncio
+    async def test_call_tool_chain_can_reference_interfaces(self, code_mode_client, mock_base_client, sample_tool):
+        """Regression test for issue #24: `interfaces` and `get_tool_interface`
+        must be reachable from sandboxed user code. RestrictedPython rejects
+        identifiers that start with an underscore at compile time, so the
+        previous `__interfaces` / `__get_tool_interface` names were unreachable
+        even though the context dict contained them.
+        """
+        client = code_mode_client
+        base_client = mock_base_client
+
+        base_client.config.tool_repository.get_tools.return_value = [sample_tool]
+
+        code = """
+own_iface = get_tool_interface("weather.get_current_weather")
+return {
+    "interfaces_is_str": isinstance(interfaces, str) and len(interfaces) > 0,
+    "iface_mentions_tool": "get_current_weather" in (own_iface or ""),
+}
+"""
+
+        result = await client.call_tool_chain(code)
+
+        assert result["result"]["interfaces_is_str"] is True
+        assert result["result"]["iface_mentions_tool"] is True
+
+    @pytest.mark.asyncio
     async def test_call_tool_chain_error_handling(self, code_mode_client, mock_base_client):
         """Test error handling in code execution."""
         client = code_mode_client
@@ -262,12 +288,12 @@ return len(result)
         assert "__import__" in context
         
         # Check tool-related items
-        assert "__interfaces" in context
-        assert "__get_tool_interface" in context
+        assert "interfaces" in context
+        assert "get_tool_interface" in context
         assert "weather" in context
-        
+
         # Test the tool interface function
-        interface = context["__get_tool_interface"]("weather.get_current_weather")
+        interface = context["get_tool_interface"]("weather.get_current_weather")
         assert interface is not None
         assert "get_current_weather" in interface
 

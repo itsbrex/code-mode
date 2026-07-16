@@ -29,6 +29,16 @@ Add this to your MCP client:
 
 The server loads UTCP configuration from `UTCP_CONFIG_FILE`, the current working directory, or the package directory fallback.
 
+### Claude Code (CLI)
+
+For [Claude Code](https://claude.com/claude-code) (the CLI / IDE extension), register the bridge as a user-scoped MCP server:
+
+```bash
+claude mcp add-json --scope user utcp-codemode '{"type":"stdio","command":"npx","args":["@utcp/code-mode-mcp"],"env":{"UTCP_CONFIG_FILE":"/absolute/path/to/.utcp_config.json"}}'
+```
+
+Then restart Claude Code. Verify with `claude mcp list`. Remove with `claude mcp remove utcp-codemode --scope user`.
+
 ## Configuration
 
 Example `.utcp_config.json`:
@@ -58,6 +68,18 @@ Example `.utcp_config.json`:
   }
 }
 ```
+
+### Protocol plugins
+
+Each `call_template_type` (`http`, `mcp`, `cli`, `text`, `file`, ...) lives in
+its own `@utcp/<name>` package and registers itself as a side effect of being
+imported — the bridge already imports the bundled set in
+[`index.ts`](./index.ts). To add a new transport, install the package and add
+a top-level `import "@utcp/<name>"` line; no manual `register()` call needed.
+
+**Security note:** the `@utcp/cli` plugin lets a manual run arbitrary local
+commands. It's bundled and active by default; only register manuals from
+sources you trust.
 
 ## Disabling tools per manual
 
@@ -120,6 +142,30 @@ Writes two ready-to-edit configs to `./configs/`:
 
 - `all-tools-excluded.utcp_config.json` — every manual gets an `exclude_tools` array listing all of its tools (full denylist).
 - `all-tools-included-default-disabled.utcp_config.json` — every manual gets `default_disabled: true` plus an `include_tools` array listing all of its tools (allowlist form). Prune either to taste.
+
+## 🧪 Local development against the bridge
+
+If you're hacking on `@utcp/code-mode` (the sibling `typescript-library/` package) and want to exercise it through Claude Code, use the dev scripts:
+
+```bash
+cd code-mode-mcp
+npm install
+npm run dev:register     # builds lib + bridge, overlays the lib build into the bridge's node_modules, registers as 'utcp-codemode-dev' in Claude Code
+# restart Claude Code, then call mcp__utcp-codemode-dev__call_tool_chain to test
+
+# After every edit:
+npm run dev:register     # rebuilds, re-registers; restart Claude Code
+
+# When done:
+npm run dev:unregister   # removes the MCP entry and restores the registry @utcp/code-mode
+```
+
+Both scripts are idempotent and never mutate `package.json`. The overlay strategy avoids `npm link`, which under modern npm aliases `unlink` to `uninstall --save` and would silently strip the dependency.
+
+Flags:
+
+- `--name <mcp-name>` (default `utcp-codemode-dev`) — useful if you want the dev bridge alongside a published one
+- `--config <path>` (default `./.utcp_config.json`) — point at a different UTCP config
 
 ## Exposed MCP Tools
 

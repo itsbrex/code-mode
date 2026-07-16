@@ -68,8 +68,8 @@ You have access to a CodeModeUtcpClient that allows you to execute Python code w
 
 ### 2. Interface Introspection
 **Understand tool contracts before using them:**
-- Access `__interfaces` to see all available Python type definitions
-- Use `__get_tool_interface('manual.tool')` to get specific tool interfaces
+- Access `interfaces` to see all available Python type definitions
+- Use `get_tool_interface('manual.tool')` to get specific tool interfaces
 - Interfaces show required inputs, expected outputs, and descriptions
 - Look for "Access as: manual.tool(args)" comments for usage patterns
 
@@ -93,10 +93,14 @@ You have access to a CodeModeUtcpClient that allows you to execute Python code w
 - **Return values**: Use `return your_value` to return a value from code execution
 
 ### 5. Available Runtime Context
-- `__interfaces`: String containing all Python type definitions
-- `__get_tool_interface(tool_name)`: Function to get specific tool interface
+- `interfaces`: String containing all Python type definitions
+- `get_tool_interface(tool_name)`: Function to get specific tool interface
 - All registered tools as `manual.tool` synchronous functions
 - Standard Python built-ins for data processing
+
+Note: Names starting with an underscore are reserved by the RestrictedPython
+sandbox and cannot be referenced from user code, so the runtime context uses
+plain names without leading underscores.
 
 Remember: Always discover and understand available tools before attempting to use them in code execution.
 """.strip()
@@ -424,9 +428,11 @@ import asyncio
             'time': __import__('time'),
             're': __import__('re'),
             
-            # Add Python interface definitions for reference
-            '__interfaces': await self.get_all_tools_python_interfaces(),
-            '__get_tool_interface': lambda tool_name: (
+            # Tool interface helpers — exposed under plain names because
+            # RestrictedPython rejects identifiers that start with an
+            # underscore at compile time.
+            'interfaces': await self.get_all_tools_python_interfaces(),
+            'get_tool_interface': lambda tool_name: (
                 self.tool_to_python_interface(tool)
                 if (tool := next((t for t in tools if t.name == tool_name), None))
                 else None
