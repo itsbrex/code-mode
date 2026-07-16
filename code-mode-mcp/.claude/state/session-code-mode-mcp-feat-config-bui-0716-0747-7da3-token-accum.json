@@ -1,0 +1,13 @@
+{
+  "estimatedTokens": 0,
+  "cacheReadTokens": 0,
+  "cacheCreationTokens": 0,
+  "crossings": {},
+  "firstSeenAt": "2026-07-16T14:59:09.179Z",
+  "updatedAt": "2026-07-16T15:21:59.054Z",
+  "lastToolName": "Bash",
+  "kindCounts": {
+    "unknown": 17
+  },
+  "imageResponses": 0
+}

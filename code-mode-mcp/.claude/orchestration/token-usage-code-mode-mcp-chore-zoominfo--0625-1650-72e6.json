@@ -1,0 +1,24 @@
+{
+  "sessionId": "code-mode-mcp-chore-zoominfo--0625-1650-72e6",
+  "totalTokensInjected": 658,
+  "byCategory": {
+    "prompt": 658
+  },
+  "byHook": {
+    "prompt-dispatcher": 658
+  },
+  "records": [
+    {
+      "hookName": "prompt-dispatcher",
+      "category": "prompt",
+      "tokens": 421,
+      "timestamp": "2026-06-25T23:54:54.763Z"
+    },
+    {
+      "hookName": "prompt-dispatcher",
+      "category": "prompt",
+      "tokens": 237,
+      "timestamp": "2026-06-26T21:13:15.749Z"
+    }
+  ]
+}

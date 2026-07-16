@@ -1,0 +1,26 @@
+# Session Handoff
+
+**Branch**: chore/zoominfo-mcp-registration
+**When**: 2026-06-25 23:49:54 UTC
+**Session**: code-mode-chore-zoominfo--0625-1222-184b
+
+## Summary
+No summary available.
+
+## Modified Files
+- .gitignore
+- code-mode-mcp/index.ts
+- code-mode-mcp/package-lock.json
+- code-mode-mcp/package.json
+- code-mode-mcp/scripts/config-builder-server.mjs
+- code-mode-mcp/scripts/config-builder/app.js
+- code-mode-mcp/scripts/config-builder/styles.css
+- code-mode-mcp/scripts/lib/utcp-config.mjs
+- code-mode-mcp/tool-exclusion.ts
+- python-library/.gitignore
+- typescript-library/.gitignore
+- typescript-library/README.md
+- typescript-library/jest.config.js
+- typescript-library/package-lock.json
+- typescript-library/package.json
+- typescript-library/tests/code_mode_utcp_client.test.ts

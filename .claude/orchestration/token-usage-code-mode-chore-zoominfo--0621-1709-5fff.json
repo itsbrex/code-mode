@@ -1,0 +1,24 @@
+{
+  "sessionId": "code-mode-chore-zoominfo--0621-1709-5fff",
+  "totalTokensInjected": 518,
+  "byCategory": {
+    "prompt": 518
+  },
+  "byHook": {
+    "prompt-dispatcher": 518
+  },
+  "records": [
+    {
+      "hookName": "prompt-dispatcher",
+      "category": "prompt",
+      "tokens": 219,
+      "timestamp": "2026-06-22T18:55:33.381Z"
+    },
+    {
+      "hookName": "prompt-dispatcher",
+      "category": "prompt",
+      "tokens": 299,
+      "timestamp": "2026-06-22T20:36:08.887Z"
+    }
+  ]
+}

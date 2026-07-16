@@ -1,0 +1,1 @@
+{"timestamp":1782420548526,"command":"cd /Users/hack/github/code-mode/code-mode-mcp\necho \"=== syntax ===\"; node --check scripts/lib/utcp-config.mjs && echo \"utcp-config OK\"\necho \"=== tsc + tests ===\"; npm test 2>&1 | tail -12"}

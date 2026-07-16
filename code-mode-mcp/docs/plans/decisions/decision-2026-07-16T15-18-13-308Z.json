@@ -1,0 +1,15 @@
+{
+  "receivedAt": "2026-07-16T15:18:13.308Z",
+  "plan": "2026-07-16-upstream-sync.html",
+  "payload": {
+    "decisions": {
+      "wip": "stash",
+      "strategy": "merge-branch",
+      "wipfix": "preserve",
+      "cruft": "gitignore"
+    },
+    "notes": "",
+    "commandPreview": "git stash push -u -m 'wip-upstream-sync'\ngit switch -c integration/upstream-sync\ngit merge upstream/main   # resolve index.ts + patch\n# re-apply safeJsonStringify + patch after resolving index.ts\nprintf 'graphify-out/\\n.deno_lsp/\\ndebt/\\n' >> .gitignore",
+    "submittedAt": "2026-07-16T15:18:13.305Z"
+  }
+}

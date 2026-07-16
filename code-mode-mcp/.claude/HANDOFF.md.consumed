@@ -1,0 +1,14 @@
+# Session Handoff
+
+**Branch**: main
+**When**: 2026-06-26 16:43:55 UTC
+**Session**: 139fc3e6-4992-4a54-91d3-99c162cb0fed
+
+## Summary
+Done. Created **`~/.claude/CODE-MODE_MCP.md`** (global) + linked it from `CLAUDE.md`.
+
+Sections in the file:
+- **TL;DR — do this first** (don't open with `list_tools`; search/target; reconnect after config changes)
+- **Token efficiency** (the priority you flagged) — why `list_tools` wastes tokens, use `search_tools`/`tools_info`, count namespaces via file + `jq`/`node`, trash stale caches, ≤200-tool metadata windows
+- **The MCP tools** — cost table (cheap vs expensive)
+- **`call_tool_chain` guide** — plain JS, sync calls, `console.log`→`logs`, no TS types, resilient multi-call pattern, working...

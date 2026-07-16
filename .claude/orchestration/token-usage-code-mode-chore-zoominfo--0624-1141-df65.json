@@ -1,0 +1,30 @@
+{
+  "sessionId": "code-mode-chore-zoominfo--0624-1141-df65",
+  "totalTokensInjected": 786,
+  "byCategory": {
+    "prompt": 786
+  },
+  "byHook": {
+    "prompt-dispatcher": 786
+  },
+  "records": [
+    {
+      "hookName": "prompt-dispatcher",
+      "category": "prompt",
+      "tokens": 260,
+      "timestamp": "2026-06-24T18:41:23.196Z"
+    },
+    {
+      "hookName": "prompt-dispatcher",
+      "category": "prompt",
+      "tokens": 306,
+      "timestamp": "2026-06-24T22:18:39.684Z"
+    },
+    {
+      "hookName": "prompt-dispatcher",
+      "category": "prompt",
+      "tokens": 220,
+      "timestamp": "2026-06-25T17:24:36.591Z"
+    }
+  ]
+}

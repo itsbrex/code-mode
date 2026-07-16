@@ -1,0 +1,18 @@
+{
+  "sessionId": "code-mode-chore-zoominfo--0625-1222-184b",
+  "totalTokensInjected": 251,
+  "byCategory": {
+    "prompt": 251
+  },
+  "byHook": {
+    "prompt-dispatcher": 251
+  },
+  "records": [
+    {
+      "hookName": "prompt-dispatcher",
+      "category": "prompt",
+      "tokens": 251,
+      "timestamp": "2026-06-26T01:17:58.140Z"
+    }
+  ]
+}
