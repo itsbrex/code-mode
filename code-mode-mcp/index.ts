@@ -408,6 +408,43 @@ function serializeToolInfo(
   };
 }
 
+// Cycle-safe JSON serialization. Tool schemas can contain circular references
+// (recursive JSON Schemas whose $refs get dereferenced into live object cycles,
+// e.g. Salesforce's SOSL/SOQL filter grammar). A plain JSON.stringify throws
+// "Converting circular structure to JSON" on those, which would take down the
+// entire discovery response. Fast path keeps exact output for the common
+// (acyclic) case — including legitimate shared/DAG references — and only falls
+// back to a cycle-breaking pass when a real cycle would otherwise crash us.
+export function safeJsonStringify(value: unknown, space = 2): string {
+  try {
+    return JSON.stringify(value, null, space);
+  } catch (error) {
+    if (!(error instanceof TypeError)) {
+      throw error;
+    }
+    const ancestors: unknown[] = [];
+    return JSON.stringify(
+      value,
+      function (this: unknown, _key, val) {
+        if (typeof val !== "object" || val === null) {
+          return val;
+        }
+        // Drop objects that are an ancestor of themselves (a true cycle),
+        // not merely re-referenced siblings in a DAG.
+        while (ancestors.length > 0 && ancestors[ancestors.length - 1] !== this) {
+          ancestors.pop();
+        }
+        if (ancestors.includes(val)) {
+          return "[Circular]";
+        }
+        ancestors.push(val);
+        return val;
+      },
+      space
+    );
+  }
+}
+
 function truncateText(text: string, maxOutputSize: number): string {
   if (text.length <= maxOutputSize) {
     return text;
@@ -421,7 +458,7 @@ function textResponse(payload: unknown, maxOutputSize = 200_000): { content: Con
     content: [
       {
         type: "text",
-        text: truncateText(JSON.stringify(payload, null, 2), maxOutputSize)
+        text: truncateText(safeJsonStringify(payload, 2), maxOutputSize)
       }
     ]
   };
@@ -471,12 +508,11 @@ function buildCallToolChainResponse(
   content.push({
     type: "text",
     text: truncateText(
-      JSON.stringify(
+      safeJsonStringify(
         {
           result: plainResult,
           logs
         },
-        null,
         2
       ),
       maxOutputSize
