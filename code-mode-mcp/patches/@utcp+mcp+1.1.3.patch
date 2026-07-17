@@ -1,7 +1,16 @@
 diff --git a/node_modules/@utcp/mcp/dist/index.cjs b/node_modules/@utcp/mcp/dist/index.cjs
-index c4d8381..b5d734e 100644
+index c4d8381..deca4e7 100644
 --- a/node_modules/@utcp/mcp/dist/index.cjs
 +++ b/node_modules/@utcp/mcp/dist/index.cjs
+@@ -4228,7 +4228,7 @@ var McpCommunicationProtocol = class {
+       if (!schemaStr.includes("$defs") && !schemaStr.includes("$ref")) {
+         return schema;
+       }
+-      const dereferenced = await import_json_schema_ref_parser.default.dereference(schema);
++      const dereferenced = await import_json_schema_ref_parser.default.dereference(schema, { dereference: { circular: "ignore" } });
+       return dereferenced;
+     } catch (error) {
+       this._logError(`Failed to dereference schema, using original:`, error.message);
 @@ -4267,7 +4267,8 @@ var McpCommunicationProtocol = class {
          command: stdioConfig.command,
          args: stdioConfig.args || [],
@@ -12,10 +21,30 @@ index c4d8381..b5d734e 100644
        });
      } else if (serverConfig.transport === "http") {
        const httpConfig = serverConfig;
+@@ -4443,6 +4444,10 @@ var McpCommunicationProtocol = class {
+       if ("structured_output" in result) {
+         return result.structured_output;
+       }
++      const hasContent = Array.isArray(result.content) && result.content.length > 0;
++      if (!hasContent && result.structuredContent != null) {
++        return result.structuredContent;
++      }
+       if (Array.isArray(result.content)) {
+         const processedList = result.content.map((item) => {
+           if (item && item.type === "text" && typeof item.text === "string") {
 diff --git a/node_modules/@utcp/mcp/dist/index.js b/node_modules/@utcp/mcp/dist/index.js
-index 25c65ac..c2b4bef 100644
+index 25c65ac..6c809d9 100644
 --- a/node_modules/@utcp/mcp/dist/index.js
 +++ b/node_modules/@utcp/mcp/dist/index.js
+@@ -4193,7 +4193,7 @@ var McpCommunicationProtocol = class {
+       if (!schemaStr.includes("$defs") && !schemaStr.includes("$ref")) {
+         return schema;
+       }
+-      const dereferenced = await $RefParser.dereference(schema);
++      const dereferenced = await $RefParser.dereference(schema, { dereference: { circular: "ignore" } });
+       return dereferenced;
+     } catch (error) {
+       this._logError(`Failed to dereference schema, using original:`, error.message);
 @@ -4232,7 +4232,8 @@ var McpCommunicationProtocol = class {
          command: stdioConfig.command,
          args: stdioConfig.args || [],
@@ -26,3 +55,14 @@ index 25c65ac..c2b4bef 100644
        });
      } else if (serverConfig.transport === "http") {
        const httpConfig = serverConfig;
+@@ -4408,6 +4409,10 @@ var McpCommunicationProtocol = class {
+       if ("structured_output" in result) {
+         return result.structured_output;
+       }
++      const hasContent = Array.isArray(result.content) && result.content.length > 0;
++      if (!hasContent && result.structuredContent != null) {
++        return result.structuredContent;
++      }
+       if (Array.isArray(result.content)) {
+         const processedList = result.content.map((item) => {
+           if (item && item.type === "text" && typeof item.text === "string") {
