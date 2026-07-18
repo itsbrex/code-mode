@@ -1,10 +1,6 @@
 node_modules/
 dist/
 *.log
-# keep graph outputs, skip heavy/local-only files
-graphify-out/cache/            # optional: commit for shared extraction speed, skip to keep repo small
-graphify-out/manifest.json     # mtime-based, invalid after git clone — always gitignore this
-graphify-out/cost.json         # local token tracking, not useful to share
 
 .DS_Store
 .vscode
@@ -25,16 +21,12 @@ codedb.snapshot
 cresa-brokers.json
 
 # generated / local tooling noise (kept on disk, out of git status)
-graphify-out/
 .deno_lsp/
 debt/
 2026-05-18-205723-use-msgcli-mcp-instead-if-this-doesnt-work.txtq1-market-updates
 
 # local agent/tooling spillover — kept on disk, out of git status (anchored to repo root)
-/.agents/
 /.claude/
-/.gemini/
 /docs/
 /scripts/
 /FIX_ME.md
-/.graphifyignore

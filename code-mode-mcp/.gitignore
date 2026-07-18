@@ -211,11 +211,6 @@ configs/
 !scripts/lib/
 !scripts/lib/**
 
-# keep graph outputs, skip heavy/local-only files
-graphify-out/cache/            # optional: commit for shared extraction speed, skip to keep repo small
-graphify-out/manifest.json     # mtime-based, invalid after git clone — always gitignore this
-graphify-out/cost.json         # local token tracking, not useful to share
-
 # local agent/tooling spillover — kept on disk, out of git status
 # (.claude/ also covers scripts/config-builder/.claude/; docs+scripts anchored so real content stays tracked)
 .claude/

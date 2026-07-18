@@ -13,9 +13,7 @@ code-mode/
   typescript-library/   # @utcp/code-mode — npm package (main library)
   python-library/       # code-mode — PyPI package
   code-mode-mcp/        # @utcp/code-mode-mcp — MCP server bridge
-  graphify-out/         # Graphify knowledge graph output (generated)
   .claude/rules/        # Claude project rules
-  .agents/              # Gemini agent config (Graphify)
 ```
 
 No root package.json — each sub-project is independent (no npm/pnpm workspaces).
