@@ -6,7 +6,7 @@ import { toManualIdentifier as planCopy } from "../scripts/lib/host-import/plan.
 import { sanitizeManualName } from "../dist/tool-exclusion.js";
 import { sanitizeIdentifier } from "../dist/index.js";
 
-// Drift between sanitizer copies caused FIX_ME #9 (phantom orphan manuals +
+// Drift between sanitizer copies caused DIAGNOSTICS_LOG.md #9 (phantom orphan manuals +
 // exclusion rules that never matched). This test locks every implementation to
 // the same behavior so a future edit to one copy fails loudly.
 

@@ -5,7 +5,7 @@
  * this sanitized form of the manual name (e.g. "salesforce-mcp" →
  * "salesforce_mcp.<tool>"), so any code matching config template names back to
  * discovered tools must compare both spellings. Drift between sanitizer copies
- * caused the FIX_ME #9 phantom-orphan-manual bug — this module is the single
+ * caused the docs/DIAGNOSTICS_LOG.md #9 phantom-orphan-manual bug — this module is the single
  * source of truth for .mjs consumers.
  *
  * Keep in sync with tool-exclusion.ts sanitizeManualName (the TS-side

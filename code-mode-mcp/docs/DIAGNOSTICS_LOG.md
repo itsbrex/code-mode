@@ -1,4 +1,10 @@
-# FIX_ME — config-builder run diagnostics (2026-06-25)
+# DIAGNOSTICS_LOG — config-builder run diagnostics (2026-06-25)
+
+> **Status (2026-07-19): all items resolved.** This is a historical
+> investigation log, not a todo list. The last open item — upstreaming the
+> `@utcp/mcp` patch — is now
+> [typescript-utcp#33](https://github.com/universal-tool-calling-protocol/typescript-utcp/pull/33);
+> the local patch-package shim stays until that ships in a release.
 
 Issues from `npm run config-builder` against `hide-some.utcp_config.json`, with
 investigation findings, fixes, and **what was applied**.
@@ -276,9 +282,11 @@ Two fixes:
 
 ## Priority order (remaining)
 
-1. **#2 upstream PR** — submit the `stderr` change to `@utcp/mcp` so the
-   patch-package shim (now `@utcp+mcp+1.1.3.patch`) can be dropped later.
-   **This is the only open item.**
+1. ~~**#2 upstream PR**~~ — ✅ opened 2026-07-19 as
+   [typescript-utcp#33](https://github.com/universal-tool-calling-protocol/typescript-utcp/pull/33)
+   (all three patch hunks: circular-ignore deref, child stderr, structuredContent
+   fallback). Drop `@utcp+mcp+1.1.3.patch` + the `postinstall` hook once a
+   release containing it ships. **Nothing else is open.**
 
 Everything else ✅: ~~#1 retry~~ · ~~#2 stderr patch~~ · ~~#4 port/customaise~~ ·
 ~~#6a/b/c~~ · ~~#7a/b~~ · ~~#8a/b~~ · ~~Python security bumps~~ ·
