@@ -673,6 +673,13 @@ code {
   color: var(--ink-2);
   border: 1px solid var(--line);
 }
+/* Discovery failure (invalid template / registration error) — hover for detail */
+.badge--fail {
+  background: color-mix(in oklab, var(--neg) 16%, transparent);
+  color: var(--neg);
+  border-color: color-mix(in oklab, var(--neg) 45%, transparent);
+  cursor: help;
+}
 .manual__counts {
   font-size: var(--t-xs);
   color: var(--ink-3);

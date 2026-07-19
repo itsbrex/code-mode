@@ -276,6 +276,16 @@ function emptyState(title, body) {
   return `<div class="empty"><svg><use href="#i-search"/></svg><h2>${esc(title)}</h2><p>${body}</p></div>`;
 }
 
+/* Per-manual discovery diagnostics (structure/registration failures) — badge
+   with the first error inline and the full list in the tooltip. */
+function manualFailureBadge(manual) {
+  const d = manual.diagnostics;
+  if (!d || (d.structureValid !== false && d.registered !== false)) return "";
+  const label = d.structureValid === false ? "invalid template" : "failed to register";
+  const detail = (d.errors || []).join("\n") || label;
+  return `<span class="badge badge--fail" title="${esc(detail)}">⚠ ${esc(label)}</span>`;
+}
+
 function manualCountsHtml(manual) {
   const hidden = decisions.get(manual.name).hidden.size;
   const exposed = manual.tools.length - hidden;
@@ -325,6 +335,7 @@ function manualSection(entry) {
       <input type="checkbox" class="check manual__select" ${allSel ? "checked" : ""} data-some="${someSel}" title="Select every tool in this manual for bulk actions" aria-label="Select all tools in ${esc(manual.name)}" />
       <h2 class="manual__name" title="${esc(manual.name)}">${esc(manual.name)}</h2>
       <span class="badge" title="Provider type">${esc(manual.type)}</span>
+      ${manualFailureBadge(manual)}
       ${removed ? `<span class="removed-pill" title="Excluded from the generated config">removed</span>` : `<span class="manual__counts">${manualCountsHtml(manual)}</span>`}
       <span class="manual__spacer"></span>
       <div class="manual__actions">

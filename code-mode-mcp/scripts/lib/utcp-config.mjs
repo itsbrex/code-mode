@@ -22,7 +22,7 @@ import "@utcp/cli";
 import "@utcp/dotenv-loader";
 import "@utcp/file";
 
-import { UtcpClientConfigSerializer, ensureCorePluginsInitialized } from "@utcp/sdk";
+import { CallTemplateSerializer, UtcpClientConfigSerializer, ensureCorePluginsInitialized } from "@utcp/sdk";
 import { CodeModeUtcpClient } from "@utcp/code-mode";
 
 // Flags that consume the FOLLOWING token as their value, so that value must not
@@ -188,21 +188,6 @@ const DISCOVERY_TIMEOUT_SECONDS = 90;
 const MAX_DISCOVERY_ATTEMPTS = 3;
 
 /**
- * Deep-clone the config keeping ONLY the named manual templates (all force-enabled
- * and timeout-bumped). Used to re-discover just the manuals that returned no tools,
- * so a retry pass doesn't needlessly relaunch every server.
- */
-function withOnlyTemplates(rawConfig, names) {
-  const clone = withAllManualsEnabled(rawConfig);
-  const keep = new Set(names);
-  clone.manual_call_templates = (Array.isArray(clone.manual_call_templates)
-    ? clone.manual_call_templates
-    : []
-  ).filter((t) => t && typeof t === "object" && keep.has(t.name));
-  return clone;
-}
-
-/**
  * Register every manual in the config and discover its tools.
  *
  * Returns:
@@ -257,37 +242,99 @@ export async function discoverManuals(configPath, onProgress = () => {}) {
       return !m || m.size === 0;
     });
 
-  // Discover with bounded retries. Pass 1 launches everything; each later pass
-  // relaunches ONLY the manuals that still returned no tools (the usual victims
-  // of a cold-start timeout race), so flaky servers get extra chances without
-  // re-paying for the ones that already succeeded.
-  for (let attempt = 1; attempt <= MAX_DISCOVERY_ATTEMPTS; attempt++) {
-    const missing = attempt === 1 ? allTemplateNames : emptyTemplateNames();
-    if (attempt > 1) {
-      if (missing.length === 0) break;
-      await new Promise((r) => setTimeout(r, 1500 * (attempt - 1)));
-      onProgress(`Retry ${attempt - 1}/${MAX_DISCOVERY_ATTEMPTS - 1}: re-discovering ${missing.length} manual(s) with no tools…`);
-    } else {
-      onProgress(`Registering ${templates.length} manual(s) and discovering tools...`);
-    }
+  // Per-manual diagnostics so a broken manual is attributable instead of
+  // indistinguishable from a slow or genuinely empty one (pattern adapted from
+  // code-mode-cli's `utcp validate`).
+  const diagnostics = new Map(); // raw template name -> { structureValid, registered, errors: [] }
+  const diagFor = (n) => {
+    if (!diagnostics.has(n)) diagnostics.set(n, { structureValid: true, registered: undefined, errors: [] });
+    return diagnostics.get(n);
+  };
 
-    const subConfig = attempt === 1
-      ? withAllManualsEnabled(rawConfig)
-      : withOnlyTemplates(rawConfig, missing);
-    let client = null;
-    try {
-      const clientConfig = serializer.validateDict(subConfig);
-      client = await CodeModeUtcpClient.create(scriptDir, clientConfig);
-      const tools = exposeCleanToolNames(await client.getTools());
-      mergeTools(tools);
-    } catch (err) {
-      onProgress(`Discovery attempt ${attempt} error: ${err instanceof Error ? err.message : String(err)}`);
-    } finally {
-      // Dispose the client so its child MCP server processes don't linger for
-      // the whole config-builder session (and don't stack up across retry
-      // passes). The tools are already captured in `merged`.
-      if (client) await client.close().catch(() => {});
+  const enabledClone = withAllManualsEnabled(rawConfig);
+  const templateByName = new Map(
+    (Array.isArray(enabledClone.manual_call_templates) ? enabledClone.manual_call_templates : [])
+      .filter((t) => t && typeof t.name === "string")
+      .map((t) => [t.name, t])
+  );
+  // Exclusion keys are a registration-time concern (the runtime strips them
+  // before the SDK sees them); discovery force-enables everything, so strip
+  // them here too. Fresh shallow copy per call — the SDK MUTATES the passed
+  // template's `name` to its sanitized form.
+  const cleanTemplate = (t) => {
+    const { exclude_tools, include_tools, default_disabled, ...rest } = t;
+    return rest;
+  };
+  const templateSerializer = new CallTemplateSerializer();
+
+  // ONE client for every pass; manuals register individually so failures are
+  // attributable. Discover with bounded retries: pass 1 registers everything,
+  // later passes re-register ONLY the manuals that still returned no tools
+  // (the usual victims of a cold-start timeout race).
+  const clientConfig = serializer.validateDict({ ...enabledClone, manual_call_templates: [] });
+  const client = await CodeModeUtcpClient.create(scriptDir, clientConfig);
+  try {
+    for (let attempt = 1; attempt <= MAX_DISCOVERY_ATTEMPTS; attempt++) {
+      // Retries skip structurally-invalid manuals — re-registering can't fix a
+      // template zod already rejected, so don't burn backoff time on them.
+      const missing = attempt === 1
+        ? allTemplateNames
+        : emptyTemplateNames().filter((n) => diagnostics.get(n)?.structureValid !== false);
+      if (attempt > 1) {
+        if (missing.length === 0) break;
+        await new Promise((r) => setTimeout(r, 1500 * (attempt - 1)));
+        onProgress(`Retry ${attempt - 1}/${MAX_DISCOVERY_ATTEMPTS - 1}: re-registering ${missing.length} manual(s) with no tools…`);
+      } else {
+        onProgress(`Registering ${templates.length} manual(s) individually…`);
+      }
+
+      for (const name of missing) {
+        const template = templateByName.get(name);
+        if (!template) continue;
+        const diag = diagFor(name);
+
+        if (attempt === 1) {
+          try {
+            templateSerializer.validateDict(cleanTemplate(template));
+          } catch (err) {
+            diag.structureValid = false;
+            diag.errors.push(`Invalid call template: ${err instanceof Error ? err.message : String(err)}`);
+            onProgress(`✗ ${name}: invalid call template`);
+            continue;
+          }
+        } else if (!diag.structureValid) {
+          continue; // structurally broken — retrying can't help
+        }
+
+        try {
+          if (attempt > 1) {
+            // The SDK files the manual under its sanitized name and throws on
+            // duplicate registration — clear both spellings before retrying.
+            await client.deregisterManual(name).catch(() => {});
+            await client.deregisterManual(toManualIdentifier(name)).catch(() => {});
+          }
+          const result = await client.registerManual(cleanTemplate(template));
+          diag.registered = result?.success !== false;
+          if (result?.success === false) diag.errors.push(...(result.errors ?? []).map(String));
+          const count = result?.manual?.tools?.length ?? 0;
+          onProgress(`${diag.registered ? "✓" : "✗"} ${name}: ${count} tool(s)`);
+        } catch (err) {
+          diag.registered = false;
+          diag.errors.push(`Registration failed: ${err instanceof Error ? err.message : String(err)}`);
+          onProgress(`✗ ${name}: registration failed`);
+        }
+      }
+
+      try {
+        mergeTools(exposeCleanToolNames(await client.getTools()));
+      } catch (err) {
+        onProgress(`Tool listing error: ${err instanceof Error ? err.message : String(err)}`);
+      }
     }
+  } finally {
+    // Dispose the client so its child MCP server processes don't linger for
+    // the whole config-builder session. The tools are already captured.
+    await client.close().catch(() => {});
   }
 
   // Flatten the deduped Map<toolName, tool> stores into plain arrays.
@@ -309,7 +356,8 @@ export async function discoverManuals(configPath, onProgress = () => {}) {
       defaultDisabled: template?.default_disabled === true,
       exclude_tools: Array.isArray(template?.exclude_tools) ? template.exclude_tools : [],
       include_tools: Array.isArray(template?.include_tools) ? template.include_tools : [],
-      tools: list
+      tools: list,
+      diagnostics: diagnostics.get(name) ?? { structureValid: true, registered: undefined, errors: [] }
     };
   });
 
@@ -332,7 +380,8 @@ export async function discoverManuals(configPath, onProgress = () => {}) {
         defaultDisabled: false,
         exclude_tools: [],
         include_tools: [],
-        tools: list.slice().sort((a, b) => a.name.localeCompare(b.name))
+        tools: list.slice().sort((a, b) => a.name.localeCompare(b.name)),
+        diagnostics: { structureValid: true, registered: true, errors: [] }
       });
     }
   }

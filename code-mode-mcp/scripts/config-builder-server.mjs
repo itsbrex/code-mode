@@ -89,6 +89,7 @@ async function buildManifest(configPath, onProgress = () => {}) {
     defaultDisabled: manual.defaultDisabled,
     exclude_tools: manual.exclude_tools,
     include_tools: manual.include_tools,
+    diagnostics: manual.diagnostics ?? { structureValid: true, registered: undefined, errors: [] },
     tools: manual.tools.map((tool) => ({
       name: tool.name,
       shortName: shortNameOf(tool.name, manual.name),
@@ -402,9 +403,17 @@ async function main() {
   }
   spin.stop(`Discovered ${manifest.toolCount} tools across ${manifest.manualCount} manuals`);
 
-  const empty = manifest.manuals.filter((m) => m.tools.length === 0);
+  // Attributable per-manual failures first (structure or registration), then
+  // the residue: manuals that registered fine but genuinely exposed nothing.
+  const broken = manifest.manuals.filter(
+    (m) => m.diagnostics && (m.diagnostics.structureValid === false || m.diagnostics.registered === false)
+  );
+  for (const m of broken) {
+    log.warn(`${m.name}: ${m.diagnostics.errors[0] ?? "registration failed"}`);
+  }
+  const empty = manifest.manuals.filter((m) => m.tools.length === 0 && !broken.includes(m));
   if (empty.length) {
-    log.warn(`${empty.length} manual(s) returned no tools (failed to launch or genuinely empty): ${empty.map((m) => m.name).join(", ")}`);
+    log.warn(`${empty.length} manual(s) registered but returned no tools: ${empty.map((m) => m.name).join(", ")}`);
   }
 
   const home = process.env.HOME || os.homedir();
