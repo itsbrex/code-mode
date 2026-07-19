@@ -4,7 +4,13 @@
 import type { CodeModeUtcpClient } from '@utcp/code-mode';
 import type { Tool } from '@utcp/sdk';
 
-/** Sanitizes a name into a valid TypeScript identifier. */
+/**
+ * Sanitizes a name into a valid TypeScript identifier.
+ * Cross-package copy of code-mode-mcp's canonical sanitizer
+ * (tool-exclusion.ts sanitizeManualName / scripts/lib/manual-name.mjs) —
+ * separate npm package, so keep the regex in sync by hand; tests/names.test.mjs
+ * locks the behavior.
+ */
 export function sanitizeIdentifier(name: string): string {
   return name.replace(/[^a-zA-Z0-9_]/g, '_').replace(/^[0-9]/, '_$&');
 }
