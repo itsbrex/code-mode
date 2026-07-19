@@ -2,11 +2,11 @@ import { existsSync, readFileSync } from "node:fs";
 import { convertServer } from "./to-utcp.mjs";
 import { isPinned } from "./pins.mjs";
 
-// Mirror of scripts/lib/utcp-config.mjs toManualIdentifier — the UTCP SDK files
-// tools under this sanitized form, so dedup must compare both spellings.
-export function toManualIdentifier(name) {
-  return String(name).replace(/[^a-zA-Z0-9_]/g, "_").replace(/^[0-9]/, "_$&");
-}
+// Canonical sanitizer shared by all scripts (re-exported for existing callers)
+// — the UTCP SDK files tools under this sanitized form, so dedup must compare
+// both spellings.
+import { toManualIdentifier } from "../manual-name.mjs";
+export { toManualIdentifier };
 
 export function existingManualNames(utcpConfig) {
   const templates = Array.isArray(utcpConfig?.manual_call_templates) ? utcpConfig.manual_call_templates : [];

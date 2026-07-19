@@ -51,13 +51,17 @@ export function getManualNameFromToolName(toolName: string): string {
 }
 
 /**
- * Mirror the UTCP SDK's manual-name → identifier sanitization. Discovered/exposed
- * tool names are prefixed with this sanitized form (e.g. a manual named
- * "proxyman-mcp" appears as "proxyman_mcp.<tool>"), but exclusion rules are keyed
- * by the raw config template name. Registering under both keys lets the runtime
- * matcher find the rule regardless of which form the tool name carries.
+ * CANONICAL manual-name → identifier sanitizer for the TypeScript side.
+ * Mirrors the UTCP SDK's sanitization: discovered/exposed tool names are
+ * prefixed with this sanitized form (e.g. a manual named "proxyman-mcp"
+ * appears as "proxyman_mcp.<tool>"), but exclusion rules are keyed by the raw
+ * config template name. Registering under both keys lets the runtime matcher
+ * find the rule regardless of which form the tool name carries.
+ *
+ * Keep in sync with scripts/lib/manual-name.mjs (the scripts-side canonical
+ * copy) — tests/sanitizer-parity.test.mjs asserts they agree.
  */
-function sanitizeManualName(name: string): string {
+export function sanitizeManualName(name: string): string {
   return name.replace(/[^a-zA-Z0-9_]/g, "_").replace(/^[0-9]/, "_$&");
 }
 

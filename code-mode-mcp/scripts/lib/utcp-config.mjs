@@ -101,16 +101,8 @@ function manualNameOf(toolName) {
   return dotIndex === -1 ? toolName : toolName.slice(0, dotIndex);
 }
 
-/**
- * Mirror the UTCP SDK's manual-name → identifier sanitization. The SDK prefixes
- * each discovered tool with this sanitized form (e.g. "salesforce-mcp" is filed
- * as "salesforce_mcp"), so we normalize a config template name the same way when
- * matching tools back to their template. Without this, every hyphenated manual
- * looks empty AND spawns a duplicate orphan manual under the sanitized name.
- */
-function toManualIdentifier(name) {
-  return String(name).replace(/[^a-zA-Z0-9_]/g, "_").replace(/^[0-9]/, "_$&");
-}
+// Canonical sanitizer shared by all scripts — see manual-name.mjs for why.
+import { toManualIdentifier } from "./manual-name.mjs";
 
 // --- Clean tool-name exposure (mirrors index.ts buildToolAliasIndex) ----------
 // Raw MCP tool names are `<sanitizedManual>.<serverKey>.<tool>`. When the manual

@@ -31,6 +31,7 @@ import {
   applyManualExclusion,
   buildExclusionRegistryFromConfig,
   isToolExcluded,
+  sanitizeManualName,
   type ToolExclusionRegistry
 } from "./tool-exclusion.js";
 
@@ -114,9 +115,10 @@ interface ToolAliasIndex {
 }
 
 export function sanitizeIdentifier(name: string): string {
-  return name
-    .replace(/[^a-zA-Z0-9_]/g, "_")
-    .replace(/^[0-9]/, "_$&");
+  // Delegates to the canonical sanitizer in tool-exclusion.ts so every TS call
+  // site shares one implementation (parity with scripts/lib/manual-name.mjs is
+  // test-enforced).
+  return sanitizeManualName(name);
 }
 
 export function utcpNameToTsInterfaceName(utcpName: string): string {
