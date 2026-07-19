@@ -282,13 +282,19 @@ export async function discoverManuals(configPath, onProgress = () => {}) {
     const subConfig = attempt === 1
       ? withAllManualsEnabled(rawConfig)
       : withOnlyTemplates(rawConfig, missing);
+    let client = null;
     try {
       const clientConfig = serializer.validateDict(subConfig);
-      const client = await CodeModeUtcpClient.create(scriptDir, clientConfig);
+      client = await CodeModeUtcpClient.create(scriptDir, clientConfig);
       const tools = exposeCleanToolNames(await client.getTools());
       mergeTools(tools);
     } catch (err) {
       onProgress(`Discovery attempt ${attempt} error: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      // Dispose the client so its child MCP server processes don't linger for
+      // the whole config-builder session (and don't stack up across retry
+      // passes). The tools are already captured in `merged`.
+      if (client) await client.close().catch(() => {});
     }
   }
 
