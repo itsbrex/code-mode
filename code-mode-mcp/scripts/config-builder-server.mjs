@@ -11,8 +11,8 @@
  * tool's initial hidden state with the SAME matcher the MCP server uses -> inject
  * the manifest into the SPA -> serve on localhost -> open the browser.
  *
- * Config path resolution (same as the generator): CLI arg, `.env`
- * (UTCP_CONFIG_PATH / UTCP_CONFIG_FILE), then environment variables.
+ * Config path resolution (same as the generator): CLI arg, environment
+ * variables (UTCP_CONFIG_PATH / UTCP_CONFIG_FILE), then `.env`.
  *
  * Flags:
  *   --port <n>     preferred port (default 7821; auto-increments if taken)

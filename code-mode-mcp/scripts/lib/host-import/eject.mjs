@@ -13,6 +13,7 @@ export function removeManualsFromUtcp(utcpPath, names, backupRoot, opts = {}) {
   const before = Array.isArray(config.manual_call_templates) ? config.manual_call_templates : [];
   const removed = before.filter((t) => drop.has(t?.name)).map((t) => t.name);
   config.manual_call_templates = before.filter((t) => !drop.has(t?.name));
+  if (!removed.length) return { removed, backup: null }; // untouched — don't rewrite/backup
   const backup = backupFile(utcpPath, backupRoot, ...stampArgs(opts));
   writeFileSync(utcpPath, JSON.stringify(config, null, 2) + "\n");
   pruneBackups(backupRoot);

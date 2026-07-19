@@ -18,8 +18,9 @@
  * The source config path is resolved with this precedence:
  *   1. CLI arg            — `node scripts/generate-exclusion-configs.mjs <path>`
  *                           or `--config <path>` / `--config=<path>`
- *   2. `.env` file        — `UTCP_CONFIG_PATH=...` (or `UTCP_CONFIG_FILE=...`)
- *   3. Environment vars   — `UTCP_CONFIG_PATH` (fallback `UTCP_CONFIG_FILE`)
+ *   2. Environment vars   — `UTCP_CONFIG_PATH` (fallback `UTCP_CONFIG_FILE`)
+ *   3. `.env` file        — same keys; env wins so a stale `.env` never shadows
+ *                           an inline override
  *
  * Tool names are written in canonical form (`manual.server.tool`), which the
  * exclusion matcher always recognizes. Edit the generated arrays to taste.

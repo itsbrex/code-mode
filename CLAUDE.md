@@ -22,7 +22,7 @@ No root package.json — each sub-project is independent (no npm/pnpm workspaces
 
 ### TypeScript Library (`typescript-library/`)
 
-- **Package**: `@utcp/code-mode` v1.2.11
+- **Package**: `@utcp/code-mode` v1.2.12
 - **License**: MPL-2.0
 - **Entry**: `src/index.ts` re-exports `CodeModeUtcpClient` from `src/code_mode_utcp_client.ts`
 - **Build**: `tsup` (outputs ESM + CJS to `dist/`)
@@ -54,7 +54,7 @@ pytest               # 13 test cases
 
 ### MCP Server (`code-mode-mcp/`)
 
-- **Package**: `@utcp/code-mode-mcp` v1.2.0
+- **Package**: `@utcp/code-mode-mcp` v1.2.1
 - **License**: MIT (differs from root MPL-2.0)
 - **Binary**: `code-mode-mcp` → `dist/index.js`
 - **Build**: `tsc`
@@ -93,7 +93,5 @@ Key methods: `create()` (static factory), `callToolChain()` / `call_tool_chain()
 
 ## Known Issues
 
-- `code-mode-mcp/index.ts` source file may be missing from disk
-- `code-mode-mcp` references `tests/*.test.mjs` in its test script but no test files exist
 - Python `__init__.py` declares `__version__ = "1.0.0"` while `pyproject.toml` says `0.0.3`
 - No CI/CD configuration (no GitHub Actions, no Dockerfile)

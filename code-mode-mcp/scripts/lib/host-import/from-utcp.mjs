@@ -17,6 +17,10 @@ export function manualToHostServer(manual) {
       if (args[i] !== "--header" || typeof args[i + 1] !== "string") continue;
       const raw = args[i + 1];
       const sep = raw.indexOf(":");
+      if (sep === -1) {
+        i++; // malformed "Key Value" with no colon — skip rather than mangle
+        continue;
+      }
       const key = raw.slice(0, sep).trim();
       const value = raw.slice(sep + 1).trim();
       const bearer = value.match(/^Bearer\s+\$\{([A-Za-z_][A-Za-z0-9_]*)\}$/);

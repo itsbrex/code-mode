@@ -1,9 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { mkdtempSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { parseArgs, renderPlanText, run } from "../scripts/host-import-cli.mjs";
+
+const CLI = resolve(dirname(fileURLToPath(import.meta.url)), "..", "scripts", "host-import-cli.mjs");
 
 function fixture() {
   const d = mkdtempSync(join(tmpdir(), "cli-"));
@@ -81,6 +85,30 @@ test("run --apply writes manuals into the UTCP config", () => {
   assert.deepEqual(res.applied.added.sort(), ["context7", "memory"]);
   const names = JSON.parse(readFileSync(fx.utcpPath, "utf8")).manual_call_templates.map((t) => t.name).sort();
   assert.deepEqual(names, ["context7", "memory"]);
+});
+
+test("CLI refuses --eject when no UTCP config is set (clear message, not ENOENT)", () => {
+  const d = mkdtempSync(join(tmpdir(), "cli-eject-guard-"));
+  const r = spawnSync(process.execPath, [CLI, "--eject", "memory"], {
+    cwd: d, // empty dir — no .env to fall back to
+    env: { ...process.env, UTCP_CONFIG_PATH: "", UTCP_CONFIG_FILE: "" },
+    encoding: "utf8"
+  });
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /Refusing to --eject/);
+  assert.doesNotMatch(r.stderr, /ENOENT/);
+});
+
+test("CLI refuses --eject when the UTCP config path does not exist", () => {
+  const d = mkdtempSync(join(tmpdir(), "cli-eject-guard-"));
+  const missing = join(d, "nope.utcp_config.json");
+  const r = spawnSync(process.execPath, [CLI, "--eject", "memory"], {
+    cwd: d,
+    env: { ...process.env, UTCP_CONFIG_PATH: missing, UTCP_CONFIG_FILE: "" },
+    encoding: "utf8"
+  });
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /Refusing to --eject: UTCP config not found/);
 });
 
 test("run --apply --strip-host removes from host configs", () => {

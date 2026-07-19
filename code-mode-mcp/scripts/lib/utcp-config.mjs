@@ -55,8 +55,8 @@ export function parseCliConfigArg(argv) {
 
 /**
  * Resolve the source config path with precedence:
- *   1. explicit arg (or CLI arg)   2. `.env` value   3. environment variable
- * Recognizes UTCP_CONFIG_PATH then UTCP_CONFIG_FILE in both .env and env.
+ *   1. explicit arg (or CLI arg)   2. environment variable   3. `.env` value
+ * Recognizes UTCP_CONFIG_PATH then UTCP_CONFIG_FILE in both env and .env.
  */
 export function resolveConfigPath(explicit) {
   const cliArg = explicit ?? parseCliConfigArg(process.argv);

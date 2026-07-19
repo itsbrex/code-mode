@@ -21,6 +21,7 @@ export function addManualsToUtcp(utcpPath, manuals, backupRoot, opts = {}) {
     have.add(m.name);
     added.push(m.name);
   }
+  if (!added.length) return { added, skipped, backup: null }; // nothing to write
   const backup = backupFile(utcpPath, backupRoot, ...stampArgs(opts));
   writeFileSync(utcpPath, JSON.stringify(config, null, 2) + "\n");
   pruneBackups(backupRoot);
@@ -45,6 +46,7 @@ export function stripFromClaudeJson(path, names, backupRoot, opts = {}) {
       }
     }
   }
+  if (!removed.length) return { removed, backup: null }; // untouched — don't rewrite/backup
   const backup = backupFile(path, backupRoot, ...stampArgs(opts));
   writeFileSync(path, JSON.stringify(data, null, 2) + "\n");
   pruneBackups(backupRoot);
@@ -64,6 +66,7 @@ export function stripFromCodexToml(path, names, backupRoot, opts = {}) {
     if (block.test(text)) removed.push(name);
     text = text.replace(block, "");
   }
+  if (!removed.length) return { removed: [], backup: null }; // untouched — don't rewrite/backup
   const backup = backupFile(path, backupRoot, ...stampArgs(opts));
   writeFileSync(path, text);
   pruneBackups(backupRoot);

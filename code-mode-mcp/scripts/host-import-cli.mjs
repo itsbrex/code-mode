@@ -122,6 +122,16 @@ function main() {
     console.error(`Refusing to --apply: UTCP config not found at ${opts.utcpPath}`);
     process.exit(1);
   }
+  // Eject reads (and rewrites) the UTCP config directly — guard it the same way
+  // so a missing/unset UTCP_CONFIG_PATH fails with a message, not an ENOENT stack.
+  if (opts.eject && opts.eject.length && !existsSync(opts.utcpPath)) {
+    console.error(
+      opts.utcpPath
+        ? `Refusing to --eject: UTCP config not found at ${opts.utcpPath}`
+        : "Refusing to --eject: set UTCP_CONFIG_PATH (or UTCP_CONFIG_FILE) to your .utcp_config.json"
+    );
+    process.exit(1);
+  }
   const res = run(opts);
   if (res.ejected) {
     for (const e of res.ejected) console.log(`Ejected ${e.name} → ${e.wroteTo.join(", ")}`);

@@ -561,7 +561,12 @@ export function getToolDefinitions(options: ToolRuntimeOptions = {}): ToolDefini
           const client = await getClient();
           const success = await client.deregisterManual(input.manual_name);
           if (success) {
+            // applyManualExclusion registers the rule under BOTH the raw manual
+            // name and its sanitized identifier (e.g. "proxyman-mcp" AND
+            // "proxyman_mcp") — clear both so no stale rule survives under the
+            // sanitized alias.
             exclusionRegistry.delete(input.manual_name);
+            exclusionRegistry.delete(sanitizeIdentifier(input.manual_name));
           }
           return textResponse({
             success,
@@ -773,7 +778,8 @@ export function registerMcpTools(server: McpServer, options: ToolRuntimeOptions 
 export function createMcpServer(options: ToolRuntimeOptions = {}): McpServer {
   const server = new McpServer({
     name: "code-mode-mcp",
-    version: "1.2.0"
+    // Keep in sync with package.json "version".
+    version: "1.2.1"
   });
 
   registerMcpTools(server, options);
