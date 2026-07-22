@@ -6,7 +6,7 @@ This server keeps the same execution model as `CodeModeUtcpClient`:
 
 - discover tools first
 - inspect interfaces before using them
-- execute synchronous sandbox code with `manual.tool(args)`
+- execute sandbox code with `manual.tool(args)` (async/await supported)
 - receive the actual runtime result shape `{ result, logs }`
 
 ## Quick Start
@@ -175,7 +175,7 @@ Flags:
 - `list_tools` - list registered UTCP tools with compact, paginated UTCP and sandbox access names
 - `tools_info` - inspect complete UTCP tool interface information for selected tools
 - `get_required_variables_for_tool` - return the environment variables required by a tool
-- `call_tool_chain` - execute synchronous TypeScript with UTCP tool access
+- `call_tool_chain` - execute TypeScript with UTCP tool access (sync or async/await)
 
 ## Tool Discovery Flow
 
@@ -184,18 +184,29 @@ The intended workflow is:
 1. `search_tools` to find relevant tools
 2. `tools_info` to inspect exact interfaces
 3. `get_required_variables_for_tool` if configuration is unclear
-4. `call_tool_chain` to execute sync sandbox code
+4. `call_tool_chain` to execute sandbox code
 
 ## `call_tool_chain` Execution Model
 
-Inside sandbox code, tools are synchronous:
+Your code runs as the body of an `async function`, so `return` the value you want
+and use top-level `await` freely. Tool calls work either synchronously or with
+`await` — both are valid:
 
 ```typescript
+// synchronous — the host bridges the async call for you
 const report = reporting.generate_insights({ account_id: "123" });
 return report;
 ```
 
-Do not use `await` for sandbox tool calls.
+```typescript
+// async/await — equivalent, use whichever reads better
+const report = await reporting.generate_insights({ account_id: "123" });
+return report;
+```
+
+`await` is optional for tool calls, not forbidden. The executed code must be valid
+JavaScript, though: the generated TypeScript interfaces are reference documentation
+for shaping argument objects — do not put type annotations in the code you run.
 
 The final text payload reports the actual code-mode result shape:
 

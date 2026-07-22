@@ -154,15 +154,17 @@ function parseTextPayload(response) {
   return JSON.parse(textBlock.text);
 }
 
-test("prompt text teaches only the sync UTCP model", () => {
+test("prompt text teaches the UTCP model with async/await support", () => {
   const prompt = buildPromptText();
   assert.match(prompt, /tools_info/);
   assert.match(prompt, /get_required_variables_for_tool/);
-  assert.match(prompt, /synchronous TypeScript tool execution/);
+  // async/await is a first-class, supported execution style (parity with upstream
+  // + the library's own AGENT_PROMPT_TEMPLATE, which this prompt now embeds).
+  assert.match(prompt, /async function/);
+  assert.match(prompt, /await/);
+  // ...but the prompt must still steer to THIS server's tool names, not upstream's.
   assert.doesNotMatch(prompt, /tool_info/);
   assert.doesNotMatch(prompt, /get_required_keys_for_tool/);
-  assert.doesNotMatch(prompt, /async function/);
-  assert.doesNotMatch(prompt, /await .*tool/i);
 });
 
 test("clean wrapper surface exposes only canonical tool names", () => {
