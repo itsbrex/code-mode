@@ -234,7 +234,8 @@ Verified: code-mode-mcp `tsc --noEmit` exit 0, `npm test` 40/40, patch applies c
 
 ### Follow-up resolutions (the 3 previously-blocked items)
 - **SDK 1.29 TS2589** → ✅ fixed with a narrow types-only cast at the `server.registerTool` call (only `inputSchema` cast; name/title/description/handler stay typed). No runtime change.
-- **@utcp/code-mode 1.2.12** → ✅ NOT prompt-only: it ships a real async execution harness + wall-clock timeout (`Promise.race`) + `undefined→null` + better error stacks. Adopted for those runtime fixes; kept the server's deliberate **sync-only** contract by replacing the embedded `AGENT_PROMPT_TEMPLATE` with an inline sync guide (`buildPromptText`), so the sync-only test stays green. (Async now works under the hood if ever wanted — flip the prompt to advertise it.)
+- **@utcp/code-mode 1.2.12** → ✅ NOT prompt-only: it ships a real async execution harness + wall-clock timeout (`Promise.race`) + `undefined→null` + better error stacks. Adopted for those runtime fixes. **Originally** kept a deliberate sync-only prompt (inline `buildPromptText` instead of the embedded `AGENT_PROMPT_TEMPLATE`) so a sync-only test stayed green — but that diverged from upstream, which advertises async/await, and steered agents to write plain synchronous JS.
+  - **Reverted (branch `fix/mcp-async-await-prompt`):** `buildPromptText` now re-embeds `CodeModeUtcpClient.AGENT_PROMPT_TEMPLATE` (parity with upstream), `call_tool_chain` is retitled off "Sync", and the prompt test asserts async/await IS supported. `await manual.tool(args)` and plain `manual.tool(args)` both work; a new typescript-library test proves the `await` path end-to-end. The executed code must still be valid JS (no TS type annotations) — the sandbox is isolated-vm/V8 with no transpile step.
 - **microsoft-mcp cryptography→49** → ✅ unblocked by msal 1.37.0 (`cryptography<49`→`<51`). msal constraints checked per version: 1.34/1.35/1.36 = `<49`; 1.37 = `<51`.
 
 ---

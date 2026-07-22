@@ -341,7 +341,7 @@ export async function findToolByName(
 export function buildPromptText(): string {
   return `# UTCP Code Mode MCP Server Usage Guide
 
-You have access to a UTCP Code Mode MCP server that exposes UTCP-native discovery and synchronous TypeScript tool execution.
+You have access to a UTCP Code Mode MCP server that exposes UTCP-native discovery and TypeScript tool execution.
 
 ## Workflow: Always Follow This Pattern
 
@@ -351,20 +351,15 @@ You have access to a UTCP Code Mode MCP server that exposes UTCP-native discover
 - Use \`tools_info\` to inspect full tool interfaces before writing execution code.
 - Use \`get_required_variables_for_tool\` when you need to know which environment variables a tool depends on.
 
-## Tool access & execution model
-- Tools are namespaced as \`manual.tool\` (e.g. \`manual_name.tool_name\`); use the full name to avoid collisions.
-- Inspect \`__interfaces\` (all interface definitions) or \`__getToolInterface('manual.tool')\` for a specific contract before writing code.
-- Call tools synchronously: \`manual.tool({ param: value })\` — no \`await\` needed; the host bridges async work internally.
-- Standard JS globals are available (\`console\`, \`JSON\`, \`Math\`, \`Date\`). All \`console\` output is captured and returned.
-- Chain calls by passing one result into the next, wrap calls in try/catch, and \`return\` the final value.
+${CodeModeUtcpClient.AGENT_PROMPT_TEMPLATE}
 
-### 2. Execute code with the actual runtime model
-- \`call_tool_chain\` executes TypeScript with synchronous \`manual.tool(args)\` access.
-- Do not use \`await\` for sandbox tool calls.
-- Return the value you want from the code block directly.
+## Execution notes for this server
+- \`call_tool_chain\` runs your code as the body of an \`async function\`: \`return\` the value you want and use top-level \`await\` freely.
+- Tool calls work both ways — \`manual.tool(args)\` (the host bridges the async call synchronously) or \`await manual.tool(args)\` if you prefer async style. Both are valid; pick whichever reads better.
+- Executed code must be valid JavaScript syntax: do not put type annotations (\`: string\`) or \`interface\` declarations in the code you run. The generated TypeScript interfaces are reference documentation for building correct argument objects — they are not runnable syntax and will throw a SyntaxError inside the sandbox.
 - The MCP text payload reports the library's actual result shape: \`{ result, logs }\`.
 
-Remember: this wrapper follows the UTCP library contract exactly. Discover first, inspect interfaces second, execute sync sandbox code last.`;
+Remember: discover first, inspect interfaces second, execute code last.`;
 }
 
 function serializeToolSummary(tool: Tool): SerializedToolSummary {
@@ -714,10 +709,10 @@ export function getToolDefinitions(options: ToolRuntimeOptions = {}): ToolDefini
     },
     {
       name: "call_tool_chain",
-      title: "Execute Sync TypeScript with UTCP Tools",
-      description: "Execute TypeScript with synchronous UTCP tool access and return the library result shape { result, logs }.",
+      title: "Execute TypeScript with UTCP Tools",
+      description: "Execute TypeScript (async/await supported) with UTCP tool access and return the library result shape { result, logs }.",
       inputSchema: {
-        code: z.string().describe("TypeScript code to execute. Use synchronous manual.tool(args) calls inside the sandbox."),
+        code: z.string().describe("TypeScript code to execute. Runs as an async function body — return the final value. Call tools as manual.tool(args); await is optional (await manual.tool(args) also works)."),
         timeout: z.number().int().positive().optional().default(30_000).describe("Execution timeout in milliseconds."),
         memory_limit: z.number().int().positive().optional().default(128).describe("Sandbox memory limit in MB."),
         max_output_size: z.number().int().positive().optional().default(200_000).describe("Maximum size of the final text payload in characters.")

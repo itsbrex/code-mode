@@ -353,6 +353,42 @@ describe('CodeModeUtcpClient', () => {
     expect(testResults.greetCalled).toBeDefined();
   });
 
+  test('should support await on tool calls inside sandbox code', async () => {
+    // Proves the async/await execution model advertised by AGENT_PROMPT_TEMPLATE
+    // and by the code-mode-mcp prompt: `await manual.tool(args)` must return the
+    // same value as the synchronous form (awaiting a non-thenable is a no-op, and
+    // the user code is wrapped in an async function so top-level await works).
+    delete testResults.addCalled;
+
+    const code = `
+      const result = await test_tools.add({ a: 7, b: 8 });
+      return result;
+    `;
+
+    const { result } = await client.callToolChain(code);
+    expect(result.result).toBe(15);
+    expect(result.operation).toBe('addition');
+    expect(testResults.addCalled.a).toBe(7);
+    expect(testResults.addCalled.b).toBe(8);
+  });
+
+  test('should support top-level await with chained async tool calls', async () => {
+    // Exercises multiple awaited tool calls in sequence — the shape agents will
+    // actually write once the prompt advertises async/await.
+    delete testResults.addCalled;
+    delete testResults.greetCalled;
+
+    const code = `
+      const sum = await test_tools.add({ a: 3, b: 4 });
+      const greeting = await test_tools.greet({ name: "Bob", formal: false });
+      return { total: sum.result, message: greeting.greeting };
+    `;
+
+    const { result } = await client.callToolChain(code);
+    expect(result.total).toBe(7);
+    expect(result.message).toContain("Bob");
+  });
+
   test('should handle complex data structures', async () => {
     delete testResults.processDataCalled;
     
@@ -658,8 +694,11 @@ describe('CodeModeUtcpClient', () => {
     expect(promptTemplate).toContain('Interface Introspection');
     expect(promptTemplate).toContain('Code Execution Guidelines');
     expect(promptTemplate).toContain('manual.tool({ param: value })');
+    // The template advertises the synchronous form as the default (no await NEEDED)
+    // while making clear async/await is fully supported — `await manual.tool(...)`
+    // works too. Both facts must be present so agents aren't steered to sync-only.
     expect(promptTemplate).toContain('synchronous, no await');
-    expect(promptTemplate).not.toContain('await manual.tool');
+    expect(promptTemplate).toContain('await manual.tool');
     expect(promptTemplate).toContain('__interfaces');
     expect(promptTemplate).toContain('__getToolInterface');
     expect(promptTemplate).toContain('Discover first, code second');
