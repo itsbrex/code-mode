@@ -10,8 +10,10 @@ import { ejectManuals } from "./lib/host-import/eject.mjs";
 import dotenv from "dotenv";
 import { resolveUtcpConfigPath } from "../config-path.mjs";
 
-// Resolve the UTCP config path from env / .env ONLY (env wins over .env), never
-// from argv. We deliberately avoid utcp-config.resolveConfigPath here: it also
+// Resolve the UTCP config path from env / .env ONLY, never from argv. Equal
+// configured paths are accepted; divergent UTCP_CONFIG_FILE / UTCP_CONFIG_PATH
+// values across environment and .env fail closed. We deliberately avoid
+// utcp-config.resolveConfigPath here: it also
 // scans process.argv for a positional config path, which would mistake a flag
 // value (e.g. `--only memory`, `--risk safe`) for the path. host-import takes the
 // path solely from UTCP_CONFIG_FILE / UTCP_CONFIG_PATH; returns "" if unset so

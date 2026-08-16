@@ -41,16 +41,6 @@ export * from "./tool-exclusion.js";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const TOOL_NAMES = [
-  "register_manual",
-  "deregister_manual",
-  "search_tools",
-  "list_tools",
-  "tools_info",
-  "get_required_variables_for_tool",
-  "call_tool_chain"
-] as const;
-
 const DEFAULT_LIST_TOOLS_LIMIT = 100;
 const MAX_LIST_TOOLS_LIMIT = 500;
 
@@ -802,15 +792,60 @@ function cloneDefinitionWithName(definition: ToolDefinition, name: string): Tool
   return { ...definition, name };
 }
 
+function indexToolDefinitions(definitions: ToolDefinition[]): Map<string, ToolDefinition> {
+  return new Map(definitions.map((definition) => [definition.name, definition]));
+}
+
+function requireToolDefinition(
+  definitions: Map<string, ToolDefinition>,
+  name: string
+): ToolDefinition {
+  const definition = definitions.get(name);
+  if (!definition) {
+    throw new Error(`Missing internal tool definition '${name}'`);
+  }
+  return definition;
+}
+
+function withBridgeExtensionClient(options: ToolRuntimeOptions): ToolRuntimeOptions {
+  return {
+    ...options,
+    getClient:
+      options.getExtensionClient ?? options.getClient ?? initializeBridgeExtensionClient
+  };
+}
+
+function getLocalBridgeToolDefinitions(options: ToolRuntimeOptions): {
+  compatibility: ToolDefinition[];
+  extensions: ToolDefinition[];
+} {
+  const legacy = indexToolDefinitions(
+    getLegacyToolDefinitions(withBridgeExtensionClient(options))
+  );
+  const extensionNames = [
+    ["register_manual", "bridge_v1_register_manual"],
+    ["search_tools", "bridge_v1_search_tools"],
+    ["list_tools", "bridge_v1_list_tools"],
+    ["tools_info", "bridge_v1_tools_info"],
+    ["call_tool_chain", "bridge_v1_call_tool_chain"]
+  ] as const;
+
+  return {
+    compatibility: [requireToolDefinition(legacy, "get_required_variables_for_tool")],
+    extensions: extensionNames.map(([legacyName, extensionName]) =>
+      cloneDefinitionWithName(requireToolDefinition(legacy, legacyName), extensionName)
+    )
+  };
+}
+
 export function getCanonicalToolDefinitions(
   options: ToolRuntimeOptions = {}
 ): ToolDefinition[] {
-  const legacy = getLegacyToolDefinitions(options);
-  const byName = new Map(legacy.map((definition) => [definition.name, definition]));
-  const requiredVariables = byName.get("get_required_variables_for_tool")!;
+  const byName = indexToolDefinitions(getLegacyToolDefinitions(options));
+  const requiredVariables = requireToolDefinition(byName, "get_required_variables_for_tool");
   const getClient = options.getClient ?? initializeUtcpClient;
   const canonicalRegisterManual: ToolDefinition = {
-    ...byName.get("register_manual")!,
+    ...requireToolDefinition(byName, "register_manual"),
     title: "Register a UTCP Manual",
     description: "Registers a new tool provider by providing its call template.",
     inputSchema: {
@@ -841,7 +876,7 @@ export function getCanonicalToolDefinitions(
     }
   };
   const canonicalDeregisterManual: ToolDefinition = {
-    ...byName.get("deregister_manual")!,
+    ...requireToolDefinition(byName, "deregister_manual"),
     title: "Deregister a UTCP Manual",
     description: "Deregisters a tool provider from the UTCP client.",
     inputSchema: {
@@ -877,7 +912,7 @@ export function getCanonicalToolDefinitions(
     }
   };
   const canonicalSearchTools: ToolDefinition = {
-    ...byName.get("search_tools")!,
+    ...requireToolDefinition(byName, "search_tools"),
     title: "Search for UTCP Tools",
     description: "Searches for relevant tools based on a task description.",
     inputSchema: {
@@ -918,7 +953,7 @@ export function getCanonicalToolDefinitions(
     }
   };
   const canonicalListTools: ToolDefinition = {
-    ...byName.get("list_tools")!,
+    ...requireToolDefinition(byName, "list_tools"),
     title: "List All Registered UTCP Tools",
     description: "Returns a list of all tool names currently registered.",
     inputSchema: {},
@@ -997,7 +1032,7 @@ export function getCanonicalToolDefinitions(
     }
   };
   const canonicalToolsInfo: ToolDefinition = {
-    ...byName.get("tools_info")!,
+    ...requireToolDefinition(byName, "tools_info"),
     title: "Get Tools Information with TypeScript Interface",
     description:
       "Get complete information about a specified list of tools, including TypeScript interface definition.",
@@ -1040,7 +1075,7 @@ export function getCanonicalToolDefinitions(
     }
   };
   const canonicalCallToolChain: ToolDefinition = {
-    ...byName.get("call_tool_chain")!,
+    ...requireToolDefinition(byName, "call_tool_chain"),
     title: "Execute TypeScript Code with Tool Access",
     description:
       "Execute TypeScript code with direct access to all registered tools as hierarchical functions (e.g., manual.tool()).",
@@ -1093,45 +1128,21 @@ export function getCanonicalToolDefinitions(
 export function getCompatibilityToolDefinitions(
   options: ToolRuntimeOptions = {}
 ): ToolDefinition[] {
-  const extensionOptions: ToolRuntimeOptions = {
-    ...options,
-    getClient:
-      options.getExtensionClient ?? options.getClient ?? initializeBridgeExtensionClient
-  };
-  return getLegacyToolDefinitions(extensionOptions).filter(
-    (definition) => definition.name === "get_required_variables_for_tool"
-  );
+  return getLocalBridgeToolDefinitions(options).compatibility;
 }
 
 export function getBridgeExtensionDefinitions(
   options: ToolRuntimeOptions = {}
 ): ToolDefinition[] {
-  const extensionOptions: ToolRuntimeOptions = {
-    ...options,
-    getClient:
-      options.getExtensionClient ?? options.getClient ?? initializeBridgeExtensionClient
-  };
-  const legacy = new Map(
-    getLegacyToolDefinitions(extensionOptions).map((definition) => [definition.name, definition])
-  );
-  const extensionNames = [
-    ["register_manual", "bridge_v1_register_manual"],
-    ["search_tools", "bridge_v1_search_tools"],
-    ["list_tools", "bridge_v1_list_tools"],
-    ["tools_info", "bridge_v1_tools_info"],
-    ["call_tool_chain", "bridge_v1_call_tool_chain"]
-  ] as const;
-
-  return extensionNames.map(([legacyName, extensionName]) =>
-    cloneDefinitionWithName(legacy.get(legacyName)!, extensionName)
-  );
+  return getLocalBridgeToolDefinitions(options).extensions;
 }
 
 export function getToolDefinitions(options: ToolRuntimeOptions = {}): ToolDefinition[] {
+  const localBridge = getLocalBridgeToolDefinitions(options);
   return [
     ...getCanonicalToolDefinitions(options),
-    ...getCompatibilityToolDefinitions(options),
-    ...getBridgeExtensionDefinitions(options)
+    ...localBridge.compatibility,
+    ...localBridge.extensions
   ];
 }
 

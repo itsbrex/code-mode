@@ -15,12 +15,10 @@
  *        array listing ALL of its tools (allowlist form — behaves the same as
  *        the original config, but in explicit opt-in shape you can prune).
  *
- * The source config path is resolved with this precedence:
- *   1. CLI arg            — `node scripts/generate-exclusion-configs.mjs <path>`
- *                           or `--config <path>` / `--config=<path>`
- *   2. Environment vars   — `UTCP_CONFIG_FILE` (fallback `UTCP_CONFIG_PATH`)
- *   3. `.env` file        — same keys; env wins so a stale `.env` never shadows
- *                           an inline override
+ * Configured paths from environment and `.env` are validated together first.
+ * Equal values are accepted; divergent `UTCP_CONFIG_FILE` / `UTCP_CONFIG_PATH`
+ * values fail closed. After validation, an explicit CLI arg wins; otherwise
+ * `UTCP_CONFIG_FILE` is canonical and `UTCP_CONFIG_PATH` is its legacy fallback.
  *
  * Tool names are written in canonical form (`manual.server.tool`), which the
  * exclusion matcher always recognizes. Edit the generated arrays to taste.
