@@ -105,6 +105,15 @@ interface SerializedToolInfo extends SerializedToolSummary {
 interface ToolAliasIndex {
   aliasToCanonical: Map<string, string>;
   canonicalToAlias: Map<string, string>;
+  canonicalNames: Set<string>;
+}
+
+interface ToolNameResolution {
+  rawName: string;
+  preferredAccessName: string;
+  legacyAccessName: string;
+  selectedAccessName: string;
+  exposedAccessName: string;
 }
 
 export function sanitizeIdentifier(name: string): string {
@@ -160,44 +169,141 @@ function getMcpToolAliasCandidate(tool: Tool): string {
   const isSingleServerManual = serverNames.length === 1;
   const isDuplicateServerSegment =
     normalizeToolNameSegment(manualName) === normalizeToolNameSegment(serverName);
+  const sanitizedManualName = sanitizeIdentifier(manualName);
+  const sanitizedServerName = sanitizeIdentifier(serverName);
+  const originalToolName = toolParts.map((part) => sanitizeIdentifier(part)).join("_");
+  const hasDuplicateToolPrefix = [sanitizedServerName, sanitizedManualName].some(
+    (prefix) => prefix.length > 0 && originalToolName.startsWith(`${prefix}_`)
+  );
 
-  if (!isSingleServerManual && !isDuplicateServerSegment) {
+  if (!isSingleServerManual && !isDuplicateServerSegment && !hasDuplicateToolPrefix) {
     return tool.name;
   }
 
-  return `${manualName}.${toolParts.join(".")}`;
+  let conciseToolName = originalToolName;
+  for (const prefix of [sanitizedServerName, sanitizedManualName]) {
+    if (prefix.length > 0 && conciseToolName.startsWith(`${prefix}_`)) {
+      conciseToolName = conciseToolName.slice(prefix.length + 1);
+    }
+  }
+
+  if (!conciseToolName) {
+    conciseToolName = originalToolName;
+  }
+
+  return `${sanitizedManualName}.${conciseToolName}`;
+}
+
+function encodeAccessNameSuffix(rawName: string): string {
+  return Buffer.from(rawName, "utf8").toString("hex");
+}
+
+function disambiguateAccessName(accessName: string, rawName: string): string {
+  return `${accessName}__raw_${encodeAccessNameSuffix(rawName)}`;
+}
+
+function countAccessNames(
+  resolutions: ToolNameResolution[],
+  selectName: (resolution: ToolNameResolution) => string
+): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const resolution of resolutions) {
+    const name = selectName(resolution);
+    counts.set(name, (counts.get(name) ?? 0) + 1);
+  }
+  return counts;
 }
 
 function buildToolAliasIndex(tools: Tool[]): ToolAliasIndex {
   const canonicalNames = new Set(tools.map((tool) => tool.name));
-  const aliasCandidates = new Map<string, string>();
-  const aliasCounts = new Map<string, number>();
+  const resolutions: ToolNameResolution[] = tools.map((tool) => {
+    const preferredAccessName = utcpNameToTsInterfaceName(getMcpToolAliasCandidate(tool));
+    const legacyAccessName = utcpNameToTsInterfaceName(tool.name);
+    return {
+      rawName: tool.name,
+      preferredAccessName,
+      legacyAccessName,
+      selectedAccessName: legacyAccessName,
+      exposedAccessName: legacyAccessName
+    };
+  });
+  const preferredCounts = countAccessNames(
+    resolutions,
+    (resolution) => resolution.preferredAccessName
+  );
+  const legacyCounts = countAccessNames(
+    resolutions,
+    (resolution) => resolution.legacyAccessName
+  );
 
-  for (const tool of tools) {
-    const alias = getMcpToolAliasCandidate(tool);
-    aliasCandidates.set(tool.name, alias);
-    aliasCounts.set(alias, (aliasCounts.get(alias) ?? 0) + 1);
+  for (const resolution of resolutions) {
+    const preferredShadowsCanonical =
+      (canonicalNames.has(resolution.preferredAccessName) &&
+        resolution.preferredAccessName !== resolution.rawName) ||
+      (legacyCounts.get(resolution.preferredAccessName) ?? 0) > 0;
+    const canUsePreferred =
+      resolution.preferredAccessName !== resolution.legacyAccessName &&
+      preferredCounts.get(resolution.preferredAccessName) === 1 &&
+      !preferredShadowsCanonical;
+    resolution.selectedAccessName = canUsePreferred
+      ? resolution.preferredAccessName
+      : resolution.legacyAccessName;
+    resolution.exposedAccessName = resolution.selectedAccessName;
   }
 
-  const aliasToCanonical = new Map<string, string>();
-  const canonicalToAlias = new Map<string, string>();
-
-  for (const tool of tools) {
-    const alias = aliasCandidates.get(tool.name) ?? tool.name;
-    const canUseAlias =
-      alias !== tool.name &&
-      aliasCounts.get(alias) === 1 &&
-      !canonicalNames.has(alias);
-
-    const exposedName = canUseAlias ? alias : tool.name;
-    canonicalToAlias.set(tool.name, exposedName);
-
-    if (canUseAlias) {
-      aliasToCanonical.set(exposedName, tool.name);
+  const selectedCounts = countAccessNames(
+    resolutions,
+    (resolution) => resolution.selectedAccessName
+  );
+  const usedAccessNames = new Set<string>();
+  for (const resolution of resolutions) {
+    if (selectedCounts.get(resolution.selectedAccessName) === 1) {
+      usedAccessNames.add(resolution.selectedAccessName);
+    }
+    if (legacyCounts.get(resolution.legacyAccessName) === 1) {
+      usedAccessNames.add(resolution.legacyAccessName);
     }
   }
 
-  return { aliasToCanonical, canonicalToAlias };
+  for (const resolution of resolutions) {
+    if ((selectedCounts.get(resolution.selectedAccessName) ?? 0) > 1) {
+      resolution.exposedAccessName = disambiguateAccessName(
+        resolution.selectedAccessName,
+        resolution.rawName
+      );
+      while (usedAccessNames.has(resolution.exposedAccessName)) {
+        resolution.exposedAccessName = disambiguateAccessName(
+          resolution.exposedAccessName,
+          resolution.rawName
+        );
+      }
+    }
+    usedAccessNames.add(resolution.exposedAccessName);
+  }
+
+  const canonicalToAlias = new Map(
+    resolutions.map((resolution) => [resolution.rawName, resolution.exposedAccessName])
+  );
+  const aliasToCanonical = new Map<string, string>();
+  for (const resolution of resolutions) {
+    if (
+      resolution.exposedAccessName !== resolution.rawName &&
+      !canonicalNames.has(resolution.exposedAccessName)
+    ) {
+      aliasToCanonical.set(resolution.exposedAccessName, resolution.rawName);
+    }
+
+    if (
+      resolution.legacyAccessName !== resolution.rawName &&
+      legacyCounts.get(resolution.legacyAccessName) === 1 &&
+      !canonicalNames.has(resolution.legacyAccessName) &&
+      !aliasToCanonical.has(resolution.legacyAccessName)
+    ) {
+      aliasToCanonical.set(resolution.legacyAccessName, resolution.rawName);
+    }
+  }
+
+  return { aliasToCanonical, canonicalToAlias, canonicalNames };
 }
 
 function exposeToolAlias(tool: Tool, index: ToolAliasIndex): Tool {
@@ -218,18 +324,14 @@ async function findToolWithAliases(
   name: string
 ): Promise<{ tool: Tool; utcpName: string } | null> {
   const index = buildToolAliasIndex(tools);
+  const canonicalName = index.canonicalNames.has(name)
+    ? name
+    : index.aliasToCanonical.get(name);
 
-  for (const tool of tools) {
-    const aliasTool = exposeToolAlias(tool, index);
-    const names = new Set([
-      tool.name,
-      aliasTool.name,
-      utcpNameToTsInterfaceName(tool.name),
-      utcpNameToTsInterfaceName(aliasTool.name)
-    ]);
-
-    if (names.has(name)) {
-      return { tool: aliasTool, utcpName: tool.name };
+  if (canonicalName) {
+    const tool = tools.find((candidate) => candidate.name === canonicalName);
+    if (tool) {
+      return { tool: exposeToolAlias(tool, index), utcpName: canonicalName };
     }
   }
 
@@ -262,6 +364,9 @@ export function createCleanToolNameClient(
 
   const resolveToolName = async (toolName: string): Promise<string> => {
     const index = await getAliasIndex();
+    if (index.canonicalNames.has(toolName)) {
+      return toolName;
+    }
     return index.aliasToCanonical.get(toolName) ?? toolName;
   };
 
@@ -754,7 +859,7 @@ function getLegacyToolDefinitions(options: ToolRuntimeOptions = {}): ToolDefinit
           return textResponse({
             tool_name: input.tool_name,
             utcp_name: found.utcpName,
-            access_name: utcpNameToTsInterfaceName(found.utcpName),
+            access_name: serializeToolSummary(found.tool).access_name,
             required_variables: requiredVariables
           });
         } catch (error) {

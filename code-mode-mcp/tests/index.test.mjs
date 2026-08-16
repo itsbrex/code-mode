@@ -1,9 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { CodeModeUtcpClient } from "@utcp/code-mode";
 
 import {
   buildPromptText,
   createCleanToolNameClient,
+  findToolByName,
   getBridgeExtensionDefinitions,
   getCanonicalToolDefinitions,
   getCompatibilityToolDefinitions,
@@ -108,6 +110,107 @@ const duplicatedMcpTools = [
     }
   }
 ];
+
+const duplicatePrefixMcpTools = [
+  {
+    name: "google_sheets.google_sheets.google_sheets_read_range",
+    description: "Read a Google Sheets range.",
+    tags: ["sheets"],
+    inputs: {
+      type: "object",
+      properties: {
+        range: { type: "string" }
+      },
+      required: ["range"]
+    },
+    outputs: {
+      type: "object",
+      properties: {}
+    },
+    tool_call_template: {
+      name: "google_sheets",
+      call_template_type: "mcp",
+      config: {
+        mcpServers: {
+          google_sheets: {
+            transport: "stdio",
+            command: "google-sheets-mcp"
+          }
+        }
+      }
+    }
+  }
+];
+
+const aliasCollisionMcpTools = [
+  {
+    ...duplicatePrefixMcpTools[0],
+    name: "docs.server-a.read",
+    description: "Read from server-a.",
+    tool_call_template: {
+      ...duplicatePrefixMcpTools[0].tool_call_template,
+      config: {
+        mcpServers: {
+          "server-a": {
+            transport: "stdio",
+            command: "server-a"
+          }
+        }
+      }
+    }
+  },
+  {
+    ...duplicatePrefixMcpTools[0],
+    name: "docs.server_a.read",
+    description: "Read from server_a.",
+    tool_call_template: {
+      ...duplicatePrefixMcpTools[0].tool_call_template,
+      config: {
+        mcpServers: {
+          server_a: {
+            transport: "stdio",
+            command: "server-a-underscore"
+          }
+        }
+      }
+    }
+  }
+];
+
+function createNameMapClient(tools) {
+  const calls = [];
+  const client = {
+    calls,
+    async callTool(toolName, toolArgs) {
+      calls.push({ kind: "callTool", toolName, toolArgs });
+      return { ok: true };
+    },
+    async callToolChain(code, timeout, memoryLimit) {
+      calls.push({ kind: "callToolChain", code, timeout, memoryLimit });
+      return { result: { ok: true }, logs: [] };
+    },
+    async deregisterManual() {
+      return true;
+    },
+    async getRequiredVariablesForRegisteredTool(toolName) {
+      calls.push({ kind: "getRequiredVariablesForRegisteredTool", toolName });
+      return [];
+    },
+    async getTools() {
+      return tools;
+    },
+    async registerManual() {
+      return { registered: true };
+    },
+    async searchTools() {
+      return tools;
+    },
+    toolToTypeScriptInterface(tool) {
+      return `// Access as: ${utcpNameToTsInterfaceName(tool.name)}(args)`;
+    }
+  };
+  return client;
+}
 
 function createClientStub() {
   const calls = [];
@@ -629,7 +732,13 @@ test("MCP tools expose clean manual.tool names when manual and server names dupl
     toolArgs: { draft_id: "draft_123" }
   });
 
-  await requiredVariables.handler({ tool_name: "typefully_remote_mcp.typefully_get_draft" });
+  const requiredPayload = parseTextPayload(
+    await requiredVariables.handler({ tool_name: "typefully_remote_mcp.typefully_get_draft" })
+  );
+  assert.equal(
+    requiredPayload.access_name,
+    "typefully_remote_mcp.typefully_get_draft"
+  );
   assert.equal(
     calls.at(-1).toolName,
     "typefully_remote_mcp.typefully-remote-mcp.typefully_get_draft"
@@ -669,6 +778,176 @@ test("clean access-name wrapper leaves canonical client tool names unchanged", a
     (await baseClient.getTools())[0].name,
     "typefully_remote_mcp.typefully-remote-mcp.typefully_list_drafts"
   );
+});
+
+test("MCP name map removes duplicated server and tool prefixes without changing raw identity", async () => {
+  const baseClient = createNameMapClient(duplicatePrefixMcpTools);
+  const client = createCleanToolNameClient(baseClient);
+  const [exposed] = await client.getTools();
+  const [searched] = await client.searchTools("sheets");
+
+  assert.equal(exposed.name, "google_sheets.read_range");
+  assert.equal(exposed.utcp_name, "google_sheets.google_sheets.google_sheets_read_range");
+  assert.equal(searched.name, "google_sheets.read_range");
+  assert.equal(
+    duplicatePrefixMcpTools[0].name,
+    "google_sheets.google_sheets.google_sheets_read_range"
+  );
+  assert.equal("utcp_name" in duplicatePrefixMcpTools[0], false);
+});
+
+test("MCP name map keeps access names unique across alias and sanitizer collisions", async () => {
+  const baseClient = createNameMapClient(aliasCollisionMcpTools);
+  const client = createCleanToolNameClient(baseClient);
+  const listTools = getBridgeExtensionDefinitions({ getClient: async () => client }).find(
+    (definition) => definition.name === "bridge_v1_list_tools"
+  );
+
+  const payload = parseTextPayload(await listTools.handler({}));
+  const accessNames = payload.tools.map((tool) => tool.access_name);
+
+  assert.equal(new Set(accessNames).size, aliasCollisionMcpTools.length);
+  assert.deepEqual(
+    payload.tools.map((tool) => tool.utcp_name),
+    aliasCollisionMcpTools.map((tool) => tool.name)
+  );
+  assert.equal(await findToolByName(client, "docs.server_a_read"), null);
+
+  const reversedClient = createCleanToolNameClient(
+    createNameMapClient([...aliasCollisionMcpTools].reverse())
+  );
+  const reversedListTools = getBridgeExtensionDefinitions({
+    getClient: async () => reversedClient
+  }).find((definition) => definition.name === "bridge_v1_list_tools");
+  const reversedPayload = parseTextPayload(await reversedListTools.handler({}));
+  assert.deepEqual(
+    Object.fromEntries(payload.tools.map((tool) => [tool.utcp_name, tool.access_name])),
+    Object.fromEntries(reversedPayload.tools.map((tool) => [tool.utcp_name, tool.access_name]))
+  );
+
+  for (const [index, accessName] of accessNames.entries()) {
+    await client.callTool(accessName, { index });
+  }
+  assert.deepEqual(
+    baseClient.calls.filter((call) => call.kind === "callTool").map((call) => call.toolName),
+    aliasCollisionMcpTools.map((tool) => tool.name)
+  );
+});
+
+test("legacy aliases cannot overwrite collision-disambiguated access routes", async () => {
+  const firstRawName = aliasCollisionMcpTools[0].name;
+  const encodedFirstRawName = Buffer.from(firstRawName, "utf8").toString("hex");
+  const legacyCollisionTool = {
+    ...duplicatePrefixMcpTools[0],
+    name: `docs.server_a_read_.raw_${encodedFirstRawName}`,
+    description: "Owns a legacy name matching another tool's first disambiguation.",
+    tool_call_template: {
+      ...duplicatePrefixMcpTools[0].tool_call_template,
+      config: {
+        mcpServers: {
+          server_a_read_: {
+            transport: "stdio",
+            command: "legacy-collision-server"
+          }
+        }
+      }
+    }
+  };
+  const tools = [...aliasCollisionMcpTools, legacyCollisionTool];
+  const baseClient = createNameMapClient(tools);
+  const client = createCleanToolNameClient(baseClient);
+  const listTools = getBridgeExtensionDefinitions({ getClient: async () => client }).find(
+    (definition) => definition.name === "bridge_v1_list_tools"
+  );
+
+  const payload = parseTextPayload(await listTools.handler({}));
+  const firstAccessName = payload.tools.find(
+    (tool) => tool.utcp_name === firstRawName
+  ).access_name;
+
+  assert.equal(new Set(payload.tools.map((tool) => tool.access_name)).size, tools.length);
+  await client.callTool(firstAccessName, { route: "disambiguated" });
+  assert.deepEqual(baseClient.calls.filter((call) => call.kind === "callTool"), [
+    {
+      kind: "callTool",
+      toolName: firstRawName,
+      toolArgs: { route: "disambiguated" }
+    }
+  ]);
+});
+
+test("MCP name map preserves legacy lookup and routes raw, legacy, and access calls to raw names", async () => {
+  const rawName = duplicatePrefixMcpTools[0].name;
+  const legacyName = "google_sheets.google_sheets_google_sheets_read_range";
+  const accessName = "google_sheets.read_range";
+  const baseClient = createNameMapClient(duplicatePrefixMcpTools);
+  const client = createCleanToolNameClient(baseClient);
+  const toolsInfo = getBridgeExtensionDefinitions({ getClient: async () => client }).find(
+    (definition) => definition.name === "bridge_v1_tools_info"
+  );
+
+  const infoPayload = parseTextPayload(
+    await toolsInfo.handler({ tool_names: [rawName, legacyName, accessName] })
+  );
+  assert.deepEqual(
+    infoPayload.tools.map((tool) => tool.utcp_name),
+    [rawName, rawName, rawName]
+  );
+
+  await client.callTool(rawName, { route: "raw" });
+  await client.callTool(legacyName, { route: "legacy" });
+  await client.callTool(accessName, { route: "access" });
+  assert.deepEqual(
+    baseClient.calls.filter((call) => call.kind === "callTool").map((call) => call.toolName),
+    [rawName, rawName, rawName]
+  );
+});
+
+test("bridge_v1_call_tool_chain routes concise sandbox access through canonical raw tool name", async () => {
+  const rawName = duplicatePrefixMcpTools[0].name;
+  const calls = [];
+  const baseClient = Object.assign(Object.create(CodeModeUtcpClient.prototype), {
+    async callTool(toolName, toolArgs) {
+      calls.push({ toolName, toolArgs });
+      return { routed: toolName, range: toolArgs.range };
+    },
+    async deregisterManual() {
+      return true;
+    },
+    async getRequiredVariablesForRegisteredTool() {
+      return [];
+    },
+    async getTools() {
+      return duplicatePrefixMcpTools;
+    },
+    async registerManual() {
+      return { registered: true };
+    },
+    async searchTools() {
+      return duplicatePrefixMcpTools;
+    },
+    toolToTypeScriptInterface(tool) {
+      return `// Access as: ${utcpNameToTsInterfaceName(tool.name)}(args)`;
+    }
+  });
+  const client = createCleanToolNameClient(baseClient);
+  const callToolChain = getBridgeExtensionDefinitions({ getClient: async () => client }).find(
+    (definition) => definition.name === "bridge_v1_call_tool_chain"
+  );
+
+  const payload = parseTextPayload(
+    await callToolChain.handler({
+      code: 'return google_sheets.read_range({ range: "Sheet1!A1:B2" });',
+      timeout: 5_000,
+      memory_limit: 64,
+      max_output_size: 10_000
+    })
+  );
+
+  assert.deepEqual(payload.result, { routed: rawName, range: "Sheet1!A1:B2" });
+  assert.deepEqual(calls, [
+    { toolName: rawName, toolArgs: { range: "Sheet1!A1:B2" } }
+  ]);
 });
 
 test("tool definition aggregation routes canonical and extension handlers to separate clients", async () => {
@@ -723,6 +1002,7 @@ test("server config resolution accepts equal legacy value and rejects conflicts"
 });
 
 test("MCP clean-name aliases do not shadow existing canonical tool names", async () => {
+  const calls = [];
   const conflictingTools = [
     ...duplicatedMcpTools.slice(0, 1),
     {
@@ -732,7 +1012,8 @@ test("MCP clean-name aliases do not shadow existing canonical tool names", async
     }
   ];
   const baseClient = {
-    async callTool() {
+    async callTool(toolName, toolArgs) {
+      calls.push({ toolName, toolArgs });
       return { ok: true };
     },
     async callToolChain() {
@@ -772,6 +1053,24 @@ test("MCP clean-name aliases do not shadow existing canonical tool names", async
       "typefully_remote_mcp.typefully_list_drafts"
     ]
   );
+  assert.equal(new Set(listPayload.tools.map((tool) => tool.access_name)).size, 2);
+  assert.deepEqual(
+    Object.fromEntries(listPayload.tools.map((tool) => [tool.utcp_name, tool.access_name])),
+    {
+      "typefully_remote_mcp.typefully-remote-mcp.typefully_list_drafts":
+        "typefully_remote_mcp.typefully_remote_mcp_typefully_list_drafts",
+      "typefully_remote_mcp.typefully_list_drafts":
+        "typefully_remote_mcp.typefully_list_drafts"
+    }
+  );
+
+  await client.callTool("typefully_remote_mcp.typefully_list_drafts", { route: "canonical" });
+  assert.deepEqual(calls, [
+    {
+      toolName: "typefully_remote_mcp.typefully_list_drafts",
+      toolArgs: { route: "canonical" }
+    }
+  ]);
 });
 
 test("get_required_variables_for_tool reflects UTCP variable semantics", async () => {
