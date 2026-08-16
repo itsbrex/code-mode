@@ -70,9 +70,9 @@ tools = await client.search_tools('github pull request')
 ```python
 result = await client.call_tool_chain('''
 # Chain multiple operations in one request
-pr = await github.get_pull_request(owner='microsoft', repo='vscode', pull_number=1234)
-comments = await github.get_pull_request_comments(owner='microsoft', repo='vscode', pull_number=1234)
-reviews = await github.get_pull_request_reviews(owner='microsoft', repo='vscode', pull_number=1234)
+pr = github.get_pull_request(owner='microsoft', repo='vscode', pull_number=1234)
+comments = github.get_pull_request_comments(owner='microsoft', repo='vscode', pull_number=1234)
+reviews = github.get_pull_request_reviews(owner='microsoft', repo='vscode', pull_number=1234)
 
 # Process data efficiently in-sandbox
 return {
@@ -97,10 +97,10 @@ class GithubGetPullRequestInput(TypedDict):
 
 ## Enterprise-Ready
 
-- **Secure Process Sandboxing** – Subprocess isolation prevents unauthorized access
-- **Timeout Protection** – Configurable execution limits prevent runaway code  
+- **Restricted Execution** – RestrictedPython limits syntax, imports, and builtins for trusted, cooperative code
+- **Cooperative Timeouts** – Async timeout reporting is available, but cannot forcibly terminate blocking worker-thread code
 - **Complete Observability** – Full console output capture and error handling
-- **Zero External Dependencies** – Tools only accessible through registered UTCP/MCP servers
+- **Controlled Tool Access** – Registered UTCP/MCP tools define available external capabilities
 - **Runtime Introspection** – Dynamic interface discovery for adaptive workflows
 
 ## Universal Protocol Support
@@ -160,10 +160,10 @@ Replace 15+ tool calls with a single code execution:
 ```python
 result = await client.call_tool_chain('''
 # Traditional: 4 separate API round trips → Code Mode: 1 execution
-pr = await github.get_pull_request(owner='microsoft', repo='vscode', pull_number=1234)
-comments = await github.get_pull_request_comments(owner='microsoft', repo='vscode', pull_number=1234)
-reviews = await github.get_pull_request_reviews(owner='microsoft', repo='vscode', pull_number=1234)
-files = await github.get_pull_request_files(owner='microsoft', repo='vscode', pull_number=1234)
+pr = github.get_pull_request(owner='microsoft', repo='vscode', pull_number=1234)
+comments = github.get_pull_request_comments(owner='microsoft', repo='vscode', pull_number=1234)
+reviews = github.get_pull_request_reviews(owner='microsoft', repo='vscode', pull_number=1234)
+files = github.get_pull_request_files(owner='microsoft', repo='vscode', pull_number=1234)
 
 # Process data in-sandbox (no token overhead)
 summary = {
@@ -224,13 +224,13 @@ await client.register_manual(serializer.validate_dict({
 
 result = await client.call_tool_chain('''
 # Fetch PR data from GitHub (MCP)
-pr = await github.get_pull_request(owner='company', repo='api', pull_number=42)
+pr = github.get_pull_request(owner='company', repo='api', pull_number=42)
 
 # Query deployment status from database (File)
-deployment = await db.get_deployment_status(pr_id=pr["id"])
+deployment = db.get_deployment_status(pr_id=pr["id"])
 
 # Send notification to Slack (HTTP)
-await slack.post_message(
+slack.post_message(
     channel='#releases',
     text=f'PR #42 "{pr["title"]}" deployed to {deployment["environment"]}'
 )
@@ -254,7 +254,7 @@ print('PR tool expects:', pr_interface)
 # Use interface info for dynamic workflows
 has_slack_tools = 'namespace slack' in interfaces
 if has_slack_tools:
-    await slack.post_message(channel='#dev', text='Analysis complete')
+    slack.post_message(channel='#dev', text='Analysis complete')
 
 return {"toolsAvailable": has_slack_tools}
 ''')
@@ -271,7 +271,7 @@ Process large datasets without bloating the model's context:
 ```python
 result = await client.call_tool_chain('''
 # Fetch large dataset
-all_issues = await github.list_repository_issues(owner='facebook', repo='react')
+all_issues = github.list_repository_issues(owner='facebook', repo='react')
 print(f'Fetched {len(all_issues)} total issues')
 
 # Process efficiently in-sandbox
@@ -306,17 +306,17 @@ result = await client.call_tool_chain('''
 try:
     print('Starting multi-step workflow...')
     
-    data = await external_api.fetch_data(id='user-123')
+    data = external_api.fetch_data(id='user-123')
     print('Data fetched successfully')
     
-    processed = await data_processor.transform(data)
+    processed = data_processor.transform(data)
     print(f'Processing completed with {len(processed.get("warnings", []))} warnings')
     
     return processed
 except Exception as error:
     print(f'Workflow failed: {str(error)}')
     raise error  # Propagates to outer error handling
-''', timeout=30)  # 30-second timeout
+''', timeout=30)  # Cooperative timeout; not a hard stop for blocking Python
 
 # Complete observability
 print('Result:', result['result'])
@@ -329,12 +329,12 @@ Configure execution limits for different workload types:
 
 ```python
 # Quick operations (5 seconds)
-quick_result = await client.call_tool_chain('return await ping.check()', timeout=5)
+quick_result = await client.call_tool_chain('return ping.check()', timeout=5)
 
 # Heavy data processing (2 minutes)
 heavy_result = await client.call_tool_chain('''
-big_data = await database.export_full_dataset()
-return await analytics.process_dataset(big_data)
+big_data = database.export_full_dataset()
+return analytics.process_dataset(big_data)
 ''', timeout=120)
 ```
 
@@ -380,7 +380,7 @@ response = client.chat.completions.create(
 #### `call_tool_chain(code: str, timeout: int = 30) -> Dict[str, Any]`
 Execute Python code with full tool access and observability.
 - **Returns**: `{"result": any, "logs": List[str]}` with execution result and captured console output
-- **Default timeout**: 30 seconds
+- **Default timeout**: 30 seconds; this is not a hard process-termination boundary
 
 #### `get_all_tools_python_interfaces() -> str`
 Generate complete Python TypedDict interfaces for IDE integration.
@@ -400,25 +400,25 @@ Production-ready prompt template for AI agents.
 
 ---
 
-## Security & Performance
+## Execution Boundary & Performance
 
-### **Secure by Design**
-- **Process sandboxing** – Isolated execution in separate processes with real termination
-- **No filesystem access** – Tools only through registered servers  
-- **Timeout protection** – Configurable execution limits with forcible termination
-- **Zero network access** – No external dependencies or API keys exposed
+### **Trusted-Input Restricted Execution**
+- **In-process execution** – User code runs in a worker thread in the client process
+- **No hard isolation guarantee** – RestrictedPython is not a process, filesystem, or network security boundary
+- **Cooperative timeout** – Timeout handling cannot forcibly terminate blocking Python already running in the worker thread
+- **Tool capabilities apply** – Registered tools may perform filesystem, network, or credential-backed work
 - **Restricted imports** – Only safe modules allowed (json, math, asyncio, datetime, time, re, typing, collections, itertools, functools, operator, uuid)
 - **Safe builtins** – Dangerous functions like `exec`, `eval`, `open` are blocked
-- **No system access** – Modules like `os`, `sys`, `subprocess` not available
+- **Trusted input only** – Do not execute adversarial user code or use this runtime as a multi-tenant sandbox
 
 ### **Performance Optimized**
-- **Minimal memory footprint** – Process isolation is efficient with copy-on-write
+- **In-process execution** – Avoids process startup overhead
 - **Efficient tool caching** – TypedDict interfaces cached automatically
 - **Streaming console output** – Real-time log capture without buffering
 - **Identifier sanitization** – Handles invalid Python identifiers gracefully
 
 ### **Cooperative Sandbox Model**
-This security model is designed for **cooperative LLM-generated code** (not adversarial scenarios). It's perfect for:
+This restriction model is designed for **trusted, cooperative LLM-generated code** (not adversarial scenarios). It fits:
 - **AI agents** with tool-based workflows
 - **Development environments** with controlled tool access
 - **Educational settings** for safe code experimentation

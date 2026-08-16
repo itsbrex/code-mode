@@ -22,20 +22,39 @@ export function existingManualNames(utcpConfig) {
 
 export function buildPlan(hosts, utcpConfig, pins = []) {
   const existing = existingManualNames(utcpConfig);
-  const items = hosts.map((entry) => {
-    const conv = convertServer(entry.name, entry.server);
-    const duplicate = existing.has(entry.name) || existing.has(toManualIdentifier(entry.name));
+  const converted = hosts.map((entry) => ({ entry, conv: convertServer(entry.name, entry.server) }));
+  const sourcesByManualName = new Map();
+  for (const { entry, conv } of converted) {
+    const manualName = conv.manual?.name;
+    if (!manualName) continue;
+    if (!sourcesByManualName.has(manualName)) sourcesByManualName.set(manualName, new Set());
+    sourcesByManualName.get(manualName).add(entry.name);
+  }
+
+  const items = converted.map(({ entry, conv }) => {
+    const manualName = conv.manual?.name;
+    const collision = Boolean(
+      manualName && (sourcesByManualName.get(manualName)?.size ?? 0) > 1
+    );
+    const duplicate = existing.has(entry.name) || (manualName ? existing.has(manualName) : false);
     const pinned = isPinned(pins, entry);
     return {
       host: entry.host,
       scope: entry.scope,
       projectKey: entry.projectKey,
       name: entry.name,
-      risk: conv.risk,
-      reason: pinned ? "pinned — never touched" : duplicate ? "already present in the UTCP config" : conv.reason,
+      risk: collision ? "manual" : conv.risk,
+      reason: pinned
+        ? "pinned — never touched"
+        : duplicate
+          ? "already present in the UTCP config"
+          : collision
+            ? `sanitized manual name '${manualName}' collides with another host server`
+            : conv.reason,
       duplicate,
+      collision,
       pinned,
-      manual: conv.ok ? conv.manual : undefined,
+      manual: conv.ok && !collision ? conv.manual : undefined,
       source: entry,
     };
   });
@@ -48,8 +67,8 @@ export function selectManuals(plan, { risks = ["safe", "partial"] } = {}) {
   const out = [];
   for (const item of plan.items) {
     if (item.duplicate || item.pinned || !item.manual || !allow.has(item.risk)) continue;
-    if (seen.has(item.name)) continue; // same server in multiple hosts → emit once
-    seen.add(item.name);
+    if (seen.has(item.manual.name)) continue; // same server in multiple hosts → emit once
+    seen.add(item.manual.name);
     out.push(item.manual);
   }
   return out;

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseCliConfigArg } from "../scripts/lib/utcp-config.mjs";
+import { parseCliConfigArg, resolveConfigPath } from "../scripts/lib/utcp-config.mjs";
 
 const argv = (...rest) => ["node", "script.mjs", ...rest];
 
@@ -23,4 +23,32 @@ test("parseCliConfigArg does NOT mistake --port/--host values for the path", () 
 test("parseCliConfigArg still finds a real positional alongside value-flags", () => {
   assert.equal(parseCliConfigArg(argv("/cfg.json", "--port", "7833")), "/cfg.json");
   assert.equal(parseCliConfigArg(argv("--port", "7833", "/cfg.json")), "/cfg.json");
+});
+
+test("resolveConfigPath prefers canonical key and accepts equal legacy value", () => {
+  assert.equal(
+    resolveConfigPath(undefined, {
+      argv: argv(),
+      environment: {
+        UTCP_CONFIG_FILE: "/tmp/canonical.json",
+        UTCP_CONFIG_PATH: "/tmp/canonical.json"
+      },
+      dotenvValues: {},
+      cwd: "/workspace"
+    }),
+    "/tmp/canonical.json"
+  );
+});
+
+test("resolveConfigPath rejects conflicting environment and dotenv values", () => {
+  assert.throws(
+    () =>
+      resolveConfigPath(undefined, {
+        argv: argv(),
+        environment: { UTCP_CONFIG_FILE: "/tmp/canonical.json" },
+        dotenvValues: { UTCP_CONFIG_PATH: "/tmp/legacy.json" },
+        cwd: "/workspace"
+      }),
+    /Conflicting UTCP config paths/
+  );
 });

@@ -36,6 +36,6 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://utcp.io"
-Source = "https://github.com/universal-tool-calling-protocol/python-utcp"
-Issues = "https://github.com/universal-tool-calling-protocol/python-utcp/issues"
+Homepage = "https://github.com/universal-tool-calling-protocol/code-mode"
+Source = "https://github.com/universal-tool-calling-protocol/code-mode/tree/main/python-library"
+Issues = "https://github.com/universal-tool-calling-protocol/code-mode/issues"

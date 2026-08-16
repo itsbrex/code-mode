@@ -1,7 +1,8 @@
 {
-  "name": "@utcp/code-mode-mcp",
+  "name": "@itsbrex/code-mode-mcp",
   "version": "1.2.1",
-  "description": "Model Context Protocol (MCP) server for UTCP Code Mode - Execute TypeScript code with direct tool access",
+  "description": "Private Local Bridge preserving the Code Mode MCP 1.2.1 wire with versioned extensions",
+  "private": true,
   "type": "module",
   "main": "dist/index.js",
   "bin": {
@@ -9,22 +10,23 @@
   },
   "files": [
     "dist/**/*",
+    "patches/**/*",
+    "scripts/**/*",
+    "config-path.mjs",
     "README.md"
   ],
   "scripts": {
-    "postinstall": "patch-package",
+    "postinstall": "node scripts/apply-mcp-patch.mjs",
     "build": "node --max-old-space-size=8192 ./node_modules/typescript/bin/tsc",
     "test": "npm run build && node --test tests/*.test.mjs",
-    "prepublishOnly": "npm run build",
+    "prepack": "npm run build && node scripts/apply-mcp-patch.mjs",
     "start": "node dist/index.js",
     "generate-exclusion-configs": "node scripts/generate-exclusion-configs.mjs",
     "config-builder": "tsx scripts/config-builder-server.mjs",
     "config-builder:no-open": "tsx scripts/config-builder-server.mjs --no-open",
     "host-import": "tsx scripts/host-import-cli.mjs",
     "dev:register": "node scripts/dev-register.mjs",
-    "dev:unregister": "node scripts/dev-unregister.mjs",
-    "plan": "bun scripts/plan-server.mjs",
-    "plan:no-open": "bun scripts/plan-server.mjs --no-open"
+    "dev:unregister": "node scripts/dev-unregister.mjs"
   },
   "keywords": [
     "utcp",
@@ -42,22 +44,18 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/universal-tool-calling-protocol/code-mode.git",
+    "url": "https://github.com/itsbrex/code-mode.git",
     "directory": "code-mode-mcp"
   },
-  "homepage": "https://github.com/universal-tool-calling-protocol/code-mode/tree/main/code-mode-mcp#readme",
+  "homepage": "https://github.com/itsbrex/code-mode/tree/feat/fork-integration/code-mode-mcp#readme",
   "bugs": {
-    "url": "https://github.com/universal-tool-calling-protocol/code-mode/issues"
+    "url": "https://github.com/itsbrex/code-mode/issues"
   },
   "engines": {
-    "node": ">=18.0.0"
-  },
-  "publishConfig": {
-    "access": "public"
+    "node": ">=22"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
-    "patch-package": "^8.0.1",
     "tsx": "^4.22.4",
     "typescript": "^5.0.0"
   },
@@ -69,10 +67,14 @@
     "@utcp/dotenv-loader": "^1.1.0",
     "@utcp/file": "^1.1.0",
     "@utcp/http": "^1.1.11",
-    "@utcp/mcp": "^1.1.3",
+    "@utcp/mcp": "1.1.3",
     "@utcp/sdk": "^1.1.2",
     "@utcp/text": "^1.1.0",
     "dotenv": "^16.0.0",
+    "patch-package": "^8.0.1",
     "zod": "^3.22.0"
-  }
+  },
+  "bundledDependencies": [
+    "@utcp/mcp"
+  ]
 }

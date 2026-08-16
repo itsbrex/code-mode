@@ -1,7 +1,7 @@
 # PRODUCT.md — code-mode-mcp
 
 ## What this is
-`@utcp/code-mode-mcp` is an MCP server bridging `@utcp/code-mode`. It registers UTCP manuals (HTTP / MCP / CLI / file / text providers), discovers their tools, and exposes them to an agent for synchronous sandboxed code execution.
+`@itsbrex/code-mode-mcp` is a private Local Bridge over `@utcp/code-mode`. It preserves the upstream 1.2.1 seven-tool wire and keeps local additions behind versioned `bridge_v1_*` tools.
 
 A per-manual **tool exclusion** feature lets a `.utcp_config.json` hide tools from each manual via three optional fields: `exclude_tools` (denylist), `default_disabled` + `include_tools` (allowlist).
 

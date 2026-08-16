@@ -39,3 +39,17 @@ test("selectManuals can narrow to safe only", () => {
   const names = selectManuals(plan, { risks: ["safe"] }).map((m) => m.name);
   assert.deepEqual(names, ["memory"]);
 });
+
+test("buildPlan fails closed when different host names sanitize to one manual identifier", () => {
+  const plan = buildPlan(
+    [
+      { host: "codex", scope: "global", name: "my-server", server: { command: "a" } },
+      { host: "claude-code", scope: "global", name: "my.server", server: { command: "b" } }
+    ],
+    { manual_call_templates: [] }
+  );
+
+  assert.equal(plan.items.every((item) => item.collision === true), true);
+  assert.equal(plan.items.every((item) => item.risk === "manual"), true);
+  assert.deepEqual(selectManuals(plan), []);
+});

@@ -1,4 +1,6 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import "@utcp/mcp";
+import { CallTemplateSerializer, ensureCorePluginsInitialized } from "@utcp/sdk";
 import { backupFile, pruneBackups } from "./backup.mjs";
 
 function stampArgs(opts) {
@@ -7,6 +9,7 @@ function stampArgs(opts) {
 
 // Append manuals to the UTCP config (deduped by name), backing up first.
 export function addManualsToUtcp(utcpPath, manuals, backupRoot, opts = {}) {
+  ensureCorePluginsInitialized();
   const config = JSON.parse(readFileSync(utcpPath, "utf8"));
   if (!Array.isArray(config.manual_call_templates)) config.manual_call_templates = [];
   const have = new Set(config.manual_call_templates.map((t) => t?.name));
@@ -17,6 +20,17 @@ export function addManualsToUtcp(utcpPath, manuals, backupRoot, opts = {}) {
       skipped.push(m.name);
       continue;
     }
+
+    const serializer = new CallTemplateSerializer();
+    try {
+      serializer.validateDict(JSON.parse(JSON.stringify(m)));
+    } catch (error) {
+      const name = typeof m?.name === "string" ? m.name : "(unnamed)";
+      throw new Error(
+        `Invalid generated UTCP manual '${name}': ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+
     config.manual_call_templates.push(m);
     have.add(m.name);
     added.push(m.name);

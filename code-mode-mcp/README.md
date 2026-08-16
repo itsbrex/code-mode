@@ -1,24 +1,29 @@
 # UTCP Code Mode MCP
 
-Expose `@utcp/code-mode` through MCP as a thin UTCP-native bridge.
+Expose `@utcp/code-mode` through MCP as private Local Bridge
+`@itsbrex/code-mode-mcp`. Package is not published.
 
 This server keeps the same execution model as `CodeModeUtcpClient`:
 
 - discover tools first
 - inspect interfaces before using them
 - execute sandbox code with `manual.tool(args)` (async/await supported)
-- receive the actual runtime result shape `{ result, logs }`
+- preserve upstream 1.2.1 canonical result/content-block behavior
+- expose local pagination, metadata, clean access names, and `{ result, logs }`
+  only through versioned `bridge_v1_*` extensions
 
 ## Quick Start
+
+Requires Node.js 22 or newer. Build local package before configuring host.
 
 Add this to your MCP client:
 
 ```json
 {
   "mcpServers": {
-    "code-mode-mcp": {
-      "command": "npx",
-      "args": ["@utcp/code-mode-mcp"],
+    "code-mode": {
+      "command": "node",
+      "args": ["/absolute/path/to/code-mode-mcp/dist/index.js"],
       "env": {
         "UTCP_CONFIG_FILE": "/path/to/.utcp_config.json"
       }
@@ -27,17 +32,20 @@ Add this to your MCP client:
 }
 ```
 
-The server loads UTCP configuration from `UTCP_CONFIG_FILE`, the current working directory, or the package directory fallback.
+Server reads `UTCP_CONFIG_FILE` first and temporarily accepts
+`UTCP_CONFIG_PATH` as fallback. Equal duplicates work; divergent values fail
+closed. Without either value, server checks `.utcp_config.json` in current
+working directory and otherwise starts with empty config.
 
 ### Claude Code (CLI)
 
 For [Claude Code](https://claude.com/claude-code) (the CLI / IDE extension), register the bridge as a user-scoped MCP server:
 
 ```bash
-claude mcp add-json --scope user utcp-codemode '{"type":"stdio","command":"npx","args":["@utcp/code-mode-mcp"],"env":{"UTCP_CONFIG_FILE":"/absolute/path/to/.utcp_config.json"}}'
+claude mcp add-json --scope user code-mode '{"type":"stdio","command":"node","args":["/absolute/path/to/code-mode-mcp/dist/index.js"],"env":{"UTCP_CONFIG_FILE":"/absolute/path/to/.utcp_config.json"}}'
 ```
 
-Then restart Claude Code. Verify with `claude mcp list`. Remove with `claude mcp remove utcp-codemode --scope user`.
+Then restart Claude Code. Verify with `claude mcp list`. Remove with `claude mcp remove code-mode --scope user`.
 
 ## Configuration
 
@@ -83,7 +91,10 @@ sources you trust.
 
 ## Disabling tools per manual
 
-Each entry in `manual_call_templates` accepts three optional fields that control which of that manual's tools are exposed through `list_tools`, `search_tools`, `tools_info`, and the `call_tool_chain` sandbox. This mirrors Cloudflare MCP Portals' per-server tool toggles.
+Each entry in `manual_call_templates` accepts three optional Local Bridge
+fields. They control tools exposed through `bridge_v1_list_tools`,
+`bridge_v1_search_tools`, `bridge_v1_tools_info`, and
+`bridge_v1_call_tool_chain`. Canonical tools retain upstream behavior.
 
 | Field | Type | Behavior |
 | --- | --- | --- |
@@ -91,7 +102,7 @@ Each entry in `manual_call_templates` accepts three optional fields that control
 | `default_disabled` | `boolean` | When `true`, hide every tool from this manual except those in `include_tools`. |
 | `include_tools` | `string[]` | Allowlist used only when `default_disabled` is `true`. |
 
-A name in `exclude_tools` / `include_tools` matches if it equals any form of the tool: the full canonical name (`manual.server.tool`), the short name (`server.tool`), the bare tool name (`tool`), the clean alias shown in `list_tools` (`manual.tool`), or the sandbox access name. The bare tool name (e.g. `mail_delete`) is the most convenient and is what the examples below use.
+A name in `exclude_tools` / `include_tools` matches if it equals any form of the tool: the full canonical name (`manual.server.tool`), the short name (`server.tool`), the bare tool name (`tool`), the clean alias shown in `bridge_v1_list_tools` (`manual.tool`), or the sandbox access name. The bare tool name (e.g. `mail_delete`) is the most convenient and is what the examples below use.
 
 **Denylist — hide two noisy tools:**
 
@@ -116,13 +127,16 @@ A name in `exclude_tools` / `include_tools` matches if it equals any form of the
 }
 ```
 
-Hidden tools are removed from every listing (`list_tools`, `search_tools`) and from `tools_info` / `get_required_variables_for_tool` (which report them as not found). Because the `call_tool_chain` sandbox binds only the visible tools, a hidden tool has no binding inside the sandbox — referencing it fails as an undefined function (e.g. `TypeError: manual.hidden_tool is not a function`). Calling the wrapper directly with a name that still resolves to a hidden tool throws `Tool '<name>' is disabled by the manual exclusion config.`
+Hidden tools are removed from versioned Bridge Extension discovery and
+execution. Because `bridge_v1_call_tool_chain` binds only visible tools, hidden
+tools have no sandbox binding. Direct extension-client lookup rejects them with
+`Tool '<name>' is disabled by the manual exclusion config.`
 
-The same fields work with the `register_manual` MCP tool for manuals registered at runtime.
+Same fields work with `bridge_v1_register_manual` for runtime registration.
 
 ## Building exclusion configs
 
-Two helpers turn a live `.utcp_config.json` into a config with the exclusion fields filled in. Both register every manual and **discover its real tools** (the config only lists manuals; tool names are only known after registration), so they may launch your MCP/CLI manuals — exactly like running the server. The source path is resolved as: CLI arg → `.env` (`UTCP_CONFIG_PATH` / `UTCP_CONFIG_FILE`) → environment variable.
+Two helpers turn a live `.utcp_config.json` into a config with the exclusion fields filled in. Both register every manual and **discover its real tools** (the config only lists manuals; tool names are only known after registration), so they may launch your MCP/CLI manuals — exactly like running the server. Source path is resolved from explicit CLI path, then canonical `UTCP_CONFIG_FILE`, then legacy `UTCP_CONFIG_PATH`; conflicting configured values fail closed.
 
 ### Interactive dashboard
 
@@ -169,13 +183,25 @@ Flags:
 
 ## Exposed MCP Tools
 
-- `register_manual` - register a UTCP manual call template
-- `deregister_manual` - remove a registered UTCP manual
-- `search_tools` - search UTCP tools and return full TypeScript interfaces
-- `list_tools` - list registered UTCP tools with compact, paginated UTCP and sandbox access names
-- `tools_info` - inspect complete UTCP tool interface information for selected tools
-- `get_required_variables_for_tool` - return the environment variables required by a tool
-- `call_tool_chain` - execute TypeScript with UTCP tool access (sync or async/await)
+Canonical upstream 1.2.1 wire:
+
+- `register_manual`
+- `deregister_manual`
+- `search_tools`
+- `list_tools`
+- `get_required_keys_for_tool`
+- `tools_info`
+- `call_tool_chain`
+
+`get_required_variables_for_tool` is deprecated compatibility alias.
+
+Versioned Local Bridge extensions:
+
+- `bridge_v1_register_manual`
+- `bridge_v1_search_tools`
+- `bridge_v1_list_tools`
+- `bridge_v1_tools_info`
+- `bridge_v1_call_tool_chain`
 
 ## Tool Discovery Flow
 
@@ -183,7 +209,7 @@ The intended workflow is:
 
 1. `search_tools` to find relevant tools
 2. `tools_info` to inspect exact interfaces
-3. `get_required_variables_for_tool` if configuration is unclear
+3. `get_required_keys_for_tool` if configuration is unclear
 4. `call_tool_chain` to execute sandbox code
 
 ## `call_tool_chain` Execution Model
@@ -208,16 +234,19 @@ return report;
 JavaScript, though: the generated TypeScript interfaces are reference documentation
 for shaping argument objects — do not put type annotations in the code you run.
 
-The final text payload reports the actual code-mode result shape:
+Canonical final text block preserves upstream envelope:
 
 ```json
 {
-  "result": { "...": "..." },
+  "success": true,
+  "nonMcpContentResults": { "...": "..." },
   "logs": ["..."]
 }
 ```
 
-If a tool returns MCP content blocks, those blocks are passed through and a final text block still reports `{ result, logs }`.
+MCP content blocks pass through before final text block. Versioned
+`bridge_v1_call_tool_chain` retains local `{ result, logs }` envelope and
+optional memory limit.
 
 ## Example
 

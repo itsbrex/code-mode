@@ -9,7 +9,7 @@ Key Features:
     - Automatic Python type hint generation from JSON schemas
     - Console output capture
     - Tool introspection capabilities
-    - Safe execution environment with timeout support
+    - Restricted execution for trusted, cooperative code
 
 Usage:
     ```python
@@ -21,15 +21,17 @@ Usage:
     # Execute Python code with tool access
     result = await client.call_tool_chain('''
     # Your Python code here
-    tools = await search_tools("weather")
-    result = await weather.get_current_weather(city="London")
-    print(f"Weather in London: {result}")
+    weather_result = weather.get_current_weather(city="London")
+    print(f"Weather in London: {weather_result}")
+    return weather_result
     ''')
     
     print("Result:", result["result"])
     print("Logs:", result["logs"])
     ```
 """
+
+from importlib.metadata import PackageNotFoundError, version
 
 from utcp_code_mode.code_mode_utcp_client import CodeModeUtcpClient
 
@@ -39,6 +41,11 @@ from utcp_code_mode.code_mode_utcp_client import CodeModeUtcpClient
 
 __all__ = [
     "CodeModeUtcpClient",
+    "__version__",
 ]
 
-__version__ = "1.0.0"
+try:
+    __version__ = version("code-mode")
+except PackageNotFoundError:
+    # Source-tree fallback when package metadata is unavailable.
+    __version__ = "1.1.0"

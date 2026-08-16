@@ -12,6 +12,7 @@ import path from "path";
 import process from "process";
 
 import dotenv from "dotenv";
+import { resolveUtcpConfigPath } from "../../config-path.mjs";
 
 // UTCP protocol plugins — imported for their side-effect registration so the
 // client can construct HTTP / MCP / CLI / file / text manuals from the config.
@@ -56,34 +57,37 @@ export function parseCliConfigArg(argv) {
 /**
  * Resolve the source config path with precedence:
  *   1. explicit arg (or CLI arg)   2. environment variable   3. `.env` value
- * Recognizes UTCP_CONFIG_PATH then UTCP_CONFIG_FILE in both env and .env.
+ * Uses UTCP_CONFIG_FILE as canonical and UTCP_CONFIG_PATH as legacy fallback.
+ * Equal duplicates are allowed; divergent configured values fail closed.
  */
-export function resolveConfigPath(explicit) {
-  const cliArg = explicit ?? parseCliConfigArg(process.argv);
-  // Capture the `.env`-parsed values (dotenv.config() does NOT override existing
-  // process env). Precedence: explicit/CLI arg, then the environment (an inline
-  // `UTCP_CONFIG_PATH=… cmd` or a shell-profile export like ~/.zshrc), then a
-  // local `.env`. Environment wins over `.env` so an inline override is never
-  // silently shadowed by a stale `.env`. Both UTCP_CONFIG_PATH and the legacy
-  // UTCP_CONFIG_FILE are recognized in every source.
-  const fromDotenv = dotenv.config().parsed ?? {};
-  const resolved =
-    cliArg ??
-    process.env.UTCP_CONFIG_PATH ??
-    process.env.UTCP_CONFIG_FILE ??
-    fromDotenv.UTCP_CONFIG_PATH ??
-    fromDotenv.UTCP_CONFIG_FILE;
+export function resolveConfigPath(
+  explicit,
+  {
+    argv = process.argv,
+    environment = process.env,
+    dotenvValues,
+    cwd = process.cwd()
+  } = {}
+) {
+  const cliArg = explicit ?? parseCliConfigArg(argv);
+  const fromDotenv = dotenvValues ?? dotenv.config().parsed ?? {};
+  const resolved = resolveUtcpConfigPath({
+    explicit: cliArg,
+    environment,
+    dotenvValues: fromDotenv,
+    cwd
+  });
 
   if (!resolved) {
     throw new Error(
       "No UTCP config path provided.\n" +
         "Provide one via:\n" +
         "  CLI:  <command> <path-to-.utcp_config.json>\n" +
-        "  .env: UTCP_CONFIG_PATH=/abs/path/.utcp_config.json\n" +
-        "  env:  UTCP_CONFIG_PATH=/abs/path/.utcp_config.json <command>"
+        "  .env: UTCP_CONFIG_FILE=/abs/path/.utcp_config.json\n" +
+        "  env:  UTCP_CONFIG_FILE=/abs/path/.utcp_config.json <command>"
     );
   }
-  return path.resolve(resolved);
+  return resolved;
 }
 
 /** Read and parse the raw config JSON, returning { rawConfig, templates }. */

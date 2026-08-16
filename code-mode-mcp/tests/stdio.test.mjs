@@ -1,0 +1,105 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+
+const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const serverPath = join(projectRoot, "dist", "index.js");
+
+function cleanEnvironment(overrides = {}) {
+  const environment = { ...process.env };
+  delete environment.UTCP_CONFIG_FILE;
+  delete environment.UTCP_CONFIG_PATH;
+  return { ...environment, ...overrides };
+}
+
+test("packed server seam completes real stdio handshake with canonical wire", async (t) => {
+  const fixtureDir = mkdtempSync(join(tmpdir(), "code-mode-mcp-stdio-"));
+  const configPath = join(fixtureDir, ".utcp_config.json");
+  writeFileSync(configPath, JSON.stringify({ manual_call_templates: [] }));
+  const stderr = [];
+  const transport = new StdioClientTransport({
+    command: process.execPath,
+    args: [serverPath],
+    cwd: fixtureDir,
+    env: cleanEnvironment({ UTCP_CONFIG_FILE: configPath }),
+    stderr: "pipe"
+  });
+  transport.stderr?.on("data", (chunk) => stderr.push(String(chunk)));
+  const client = new Client({ name: "code-mode-mcp-test", version: "1.0.0" });
+  t.after(async () => {
+    await client.close();
+  });
+
+  await client.connect(transport);
+  assert.deepEqual(client.getServerVersion(), {
+    name: "@itsbrex/code-mode-mcp",
+    version: "1.2.1"
+  });
+  const listed = await client.listTools();
+  assert.deepEqual(
+    listed.tools.map((tool) => tool.name),
+    [
+      "register_manual",
+      "deregister_manual",
+      "search_tools",
+      "list_tools",
+      "get_required_keys_for_tool",
+      "tools_info",
+      "call_tool_chain",
+      "get_required_variables_for_tool",
+      "bridge_v1_register_manual",
+      "bridge_v1_search_tools",
+      "bridge_v1_list_tools",
+      "bridge_v1_tools_info",
+      "bridge_v1_call_tool_chain"
+    ]
+  );
+  const byName = Object.fromEntries(listed.tools.map((tool) => [tool.name, tool]));
+  assert.deepEqual(Object.keys(byName.list_tools.inputSchema.properties), []);
+  assert.deepEqual(Object.keys(byName.call_tool_chain.inputSchema.properties), [
+    "code",
+    "timeout",
+    "max_output_size"
+  ]);
+  assert.deepEqual(byName.list_tools.annotations, {
+    readOnlyHint: true,
+    openWorldHint: false,
+    idempotentHint: true
+  });
+
+  const result = await client.callTool({ name: "list_tools", arguments: {} });
+  assert.deepEqual(JSON.parse(result.content[0].text), { tools: [] });
+  assert.equal(stderr.join("").includes("Failed to start"), false);
+});
+
+test("stdio calls fail closed on divergent config variables without protocol noise", async (t) => {
+  const fixtureDir = mkdtempSync(join(tmpdir(), "code-mode-mcp-conflict-"));
+  const transport = new StdioClientTransport({
+    command: process.execPath,
+    args: [serverPath],
+    cwd: fixtureDir,
+    env: cleanEnvironment({
+      UTCP_CONFIG_FILE: join(fixtureDir, "canonical.json"),
+      UTCP_CONFIG_PATH: join(fixtureDir, "legacy.json")
+    }),
+    stderr: "pipe"
+  });
+  const stderr = [];
+  transport.stderr?.on("data", (chunk) => stderr.push(String(chunk)));
+  const client = new Client({ name: "code-mode-mcp-conflict-test", version: "1.0.0" });
+  t.after(async () => {
+    await client.close();
+  });
+
+  await client.connect(transport);
+  const result = await client.callTool({ name: "list_tools", arguments: {} });
+  assert.equal(result.isError, true);
+  assert.match(result.content[0].text, /Conflicting UTCP config paths/);
+  assert.equal(stderr.join("").includes("Unexpected token"), false);
+});

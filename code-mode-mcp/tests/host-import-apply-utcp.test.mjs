@@ -31,3 +31,21 @@ test("addManualsToUtcp creates manual_call_templates if absent", () => {
   const out = JSON.parse(readFileSync(p, "utf8"));
   assert.equal(out.manual_call_templates.length, 1);
 });
+
+test("addManualsToUtcp validates every generated template before writing", () => {
+  const d = mkdtempSync(join(tmpdir(), "apply-"));
+  const p = join(d, "c.json");
+  const original = JSON.stringify({ manual_call_templates: [] }, null, 2);
+  writeFileSync(p, original);
+
+  assert.throws(
+    () =>
+      addManualsToUtcp(
+        p,
+        [{ name: "invalid", call_template_type: "not-a-protocol" }],
+        join(d, ".bk")
+      ),
+    /Invalid generated UTCP manual 'invalid'/
+  );
+  assert.equal(readFileSync(p, "utf8"), original);
+});

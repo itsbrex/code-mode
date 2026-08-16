@@ -1,8 +1,14 @@
+import { toManualIdentifier } from "../manual-name.mjs";
+
 // Bridges that must never be federated into code-mode (would route to itself).
 export const DENYLIST = new Set(["code-mode", "code-mode-mcp", "attio-code-mode", "attio-code-mode-mcp"]);
 
 function wrap(name, spec) {
-  return { call_template_type: "mcp", config: { mcpServers: { [name]: spec } }, name };
+  return {
+    call_template_type: "mcp",
+    config: { mcpServers: { [name]: spec } },
+    name: toManualIdentifier(name)
+  };
 }
 
 function headerArgs(server) {

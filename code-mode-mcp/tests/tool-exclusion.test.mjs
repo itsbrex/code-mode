@@ -217,13 +217,13 @@ test("wrapper with no registry leaves all tools visible (back-compat)", async ()
   assert.equal(visible.length, 2);
 });
 
-import { getToolDefinitions } from "../dist/index.js";
+import { getBridgeExtensionDefinitions, getToolDefinitions } from "../dist/index.js";
 
 function parseText(result) {
   return JSON.parse(result.content[0].text);
 }
 
-test("register_manual strips exclusion keys before delegating to the SDK", async () => {
+test("bridge_v1_register_manual strips exclusion keys before delegating to the SDK", async () => {
   const received = [];
   const baseClient = {
     async callTool() { return {}; },
@@ -239,8 +239,8 @@ test("register_manual strips exclusion keys before delegating to the SDK", async
     toolToTypeScriptInterface(tool) { return `// ${tool.name}`; }
   };
   const client = createCleanToolNameClient(baseClient);
-  const definitions = getToolDefinitions({ getClient: async () => client });
-  const registerManual = definitions.find((d) => d.name === "register_manual");
+  const definitions = getBridgeExtensionDefinitions({ getClient: async () => client });
+  const registerManual = definitions.find((d) => d.name === "bridge_v1_register_manual");
 
   const payload = parseText(
     await registerManual.handler({

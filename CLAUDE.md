@@ -12,7 +12,7 @@ Repository: `github.com/universal-tool-calling-protocol/code-mode`
 code-mode/
   typescript-library/   # @utcp/code-mode — npm package (main library)
   python-library/       # code-mode — PyPI package
-  code-mode-mcp/        # @utcp/code-mode-mcp — MCP server bridge
+  code-mode-mcp/        # private @itsbrex/code-mode-mcp — local MCP bridge
   .claude/rules/        # Claude project rules
 ```
 
@@ -39,22 +39,22 @@ npm test         # jest (16 test cases)
 
 ### Python Library (`python-library/`)
 
-- **Package**: `code-mode` v0.0.3
+- **Package**: `code-mode` v1.1.0
 - **License**: MPL-2.0
 - **Entry**: `src/utcp_code_mode/__init__.py` exports `CodeModeUtcpClient`
-- **Sandbox**: `RestrictedPython` for secure code execution
+- **Execution**: in-process `RestrictedPython` restrictions for trusted, cooperative code
 - **Requires**: Python >= 3.10
-- **Deps**: `pydantic>=2.0`, `utcp>=1.0`, `typing-extensions>=4.0`, `RestrictedPython>=6.0`
+- **Deps**: `pydantic>=2.0`, `utcp>=1.1.2`, `typing-extensions>=4.0`, `RestrictedPython>=6.0`
 
 ```bash
 cd python-library
 pip install -e ".[dev]"
-pytest               # 13 test cases
+pytest
 ```
 
 ### MCP Server (`code-mode-mcp/`)
 
-- **Package**: `@utcp/code-mode-mcp` v1.2.1
+- **Package**: private local bridge `@itsbrex/code-mode-mcp` v1.2.1
 - **License**: MIT (differs from root MPL-2.0)
 - **Binary**: `code-mode-mcp` → `dist/index.js`
 - **Build**: `tsc`
@@ -81,17 +81,17 @@ reverses a migration. See `code-mode-mcp/docs/host-import.md`.
 
 1. Registers tools from various UTCP providers (HTTP, MCP, File, CLI, etc.)
 2. Auto-generates typed interfaces (TypeScript or Python) from tool JSON schemas
-3. Executes user-provided code in a sandboxed VM with bridged tool access
+3. Executes code with bridged tool access: isolated V8 in TypeScript; in-process RestrictedPython for trusted Python input
 4. Returns structured results including console output and tool call traces
 
 Key methods: `create()` (static factory), `callToolChain()` / `call_tool_chain()`, `getAllToolsTypeScriptInterfaces()` / `get_all_tools_python_interfaces()`, `AGENT_PROMPT_TEMPLATE` (static prompt template for AI agents).
 
 ## Node/Python Requirements
 
-- Node >= 18.0.0
+- Node >= 22.0.0
 - Python >= 3.10
 
 ## Known Issues
 
-- Python `__init__.py` declares `__version__ = "1.0.0"` while `pyproject.toml` says `0.0.3`
-- No CI/CD configuration (no GitHub Actions, no Dockerfile)
+- Python timeout handling cannot forcibly terminate blocking code already running in its worker thread.
+- No CI/CD configuration (no GitHub Actions, no Dockerfile).

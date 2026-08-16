@@ -71,7 +71,9 @@ const client = await CodeModeUtcpClient.create(
 
 ### `client.callToolChain(code, timeout?, memoryLimit?)`
 
-Execute TypeScript code inside the sandbox with synchronous access to registered tools.
+Execute TypeScript code inside an async sandbox function with access to registered tools.
+Top-level `await` is supported. Tool proxy calls may be written with or without
+`await`; both forms resolve to the same bridged UTCP result.
 
 ```typescript
 const { result, logs } = await client.callToolChain(
@@ -117,7 +119,7 @@ const systemPrompt = CodeModeUtcpClient.AGENT_PROMPT_TEMPLATE;
 
 ## Tool Access Pattern
 
-Inside `callToolChain`, tools are exposed as synchronous functions under their manual namespace:
+Inside `callToolChain`, tools are exposed under their manual namespace:
 
 ```typescript
 manual_name.tool_name({ param: value })
@@ -127,10 +129,13 @@ Examples:
 
 ```typescript
 weather.get_current({ city: "Tokyo" });
+await weather.get_current({ city: "Tokyo" });
 procurement.search_parts({ mpn: "LM358" });
 ```
 
-Do not use `await` for sandbox tool calls. The main process handles the async UTCP call behind the synchronous sandbox bridge.
+`await` is optional for sandbox tool calls. The main process bridges each call
+to the async UTCP client, while the sandbox supports both direct and awaited
+syntax.
 
 ## Runtime Context
 

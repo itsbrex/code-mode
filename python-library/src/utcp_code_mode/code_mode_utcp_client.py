@@ -9,11 +9,11 @@ Key Features:
     - Automatic Python type hint generation from JSON schemas
     - Console output capture
     - Tool introspection capabilities
-    - Safe execution environment with timeout support
-    - Code sandboxing using RestrictedPython
+    - Restricted execution for trusted, cooperative code
+    - RestrictedPython compilation and guarded globals
     - Import restrictions (safe modules only)
-    - Limited builtins for security
-    - Comprehensive security logging
+    - Limited builtins
+    - Execution logging
     - Tool call integration within same process
 """
 from typing import Dict, Any, List, Optional, Union, TYPE_CHECKING
@@ -39,20 +39,21 @@ class CodeModeUtcpClient(UtcpClient):
     
     This client allows executing Python code that can directly call registered tools
     as functions. It provides automatic type hint generation from JSON schemas and
-    a secure execution environment with comprehensive safety measures.
+    an in-process restricted execution environment for trusted, cooperative code.
     
-    Security Features:
-        - Code sandboxing via RestrictedPython compilation
+    Restriction Features:
+        - RestrictedPython compilation
         - Restricted imports (safe modules only)
         - Limited builtins (no exec/eval/open/file operations)
         - Safe globals from RestrictedPython
         - Print output collection and capture
-        - Comprehensive security logging
-        - Timeout enforcement with asyncio
+        - Execution logging
+        - Cooperative timeout reporting with asyncio
         - Tool calls execute in same process with full access
     
-    This implementation uses RestrictedPython for secure code execution
-    while maintaining tool call functionality in LLM environments.
+    RestrictedPython is not a security boundary. Do not execute adversarial or
+    untrusted code, and do not rely on timeout handling to terminate blocking
+    Python running in the worker thread.
     """
 
     AGENT_PROMPT_TEMPLATE = """
@@ -234,12 +235,13 @@ import asyncio
         """REQUIRED
         Execute Python code with access to registered tools and capture console output.
         
-        The code can call tools directly as async functions and has access to
+        The code calls tools as synchronous functions and has access to
         standard Python globals.
         
         Args:
             code: Python code to execute
-            timeout: Optional timeout in seconds (default: 30)
+            timeout: Cooperative timeout in seconds (default: 30). It cannot
+                forcibly terminate blocking Python in the worker thread.
             
         Returns:
             Dict containing both the execution result and captured console logs
@@ -266,7 +268,7 @@ import asyncio
             return {"result": None, "logs": logs}
 
     async def _run_with_restricted_python(self, code: str, tools: List[Tool], logs: List[str], timeout: int) -> Any:
-        """Run code with timeout support using RestrictedPython for secure execution.
+        """Run trusted code with RestrictedPython and cooperative timeout reporting.
         
         Args:
             code: Python code to execute
@@ -284,7 +286,7 @@ import asyncio
 {indented_code}
 """
         
-        # Compile code with RestrictedPython for security
+        # Compile trusted code with RestrictedPython restrictions.
         compile_result = compile_restricted(wrapped_code, '<string>', 'exec')
         
         # Check for compilation errors
@@ -335,8 +337,9 @@ import asyncio
         # Execute the compiled code (defines the user_code_function)
         exec(compiled_code, context)
         
-        # Call the user function in a thread executor so we can interrupt it with timeout
-        # This is necessary because synchronous code can't be interrupted by asyncio.wait_for()
+        # Run the synchronous function off the event loop. asyncio.wait_for can
+        # cancel waiting, but cannot terminate Python already running in this
+        # worker thread.
         user_function = context.get('user_code_function')
         if user_function and callable(user_function):
             import concurrent.futures
@@ -383,7 +386,7 @@ import asyncio
         return restricted_import
 
     async def _create_execution_context(self, tools: List[Tool], logs: Optional[List[str]] = None) -> Dict[str, Any]:
-        """Create a secure execution context for running Python code.
+        """Create a restricted execution context for trusted Python code.
         
         This context includes tool functions and safe Python globals with
         RestrictedPython security restrictions.
@@ -393,7 +396,7 @@ import asyncio
             logs: Optional array to capture print output
             
         Returns:
-            Secure execution context dictionary
+            Restricted execution context dictionary
         """
         # Start with RestrictedPython's safe globals
         context: Dict[str, Any] = safe_globals.copy()

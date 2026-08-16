@@ -53,16 +53,29 @@ test("parseArgs host-path overrides replace defaults (for safe strip/eject rehea
 });
 
 test("parseArgs takes utcpPath from env, never from a flag value (no argv misparse)", () => {
-  const prev = process.env.UTCP_CONFIG_PATH;
-  process.env.UTCP_CONFIG_PATH = "/tmp/my.utcp_config.json";
-  try {
-    // `--only memory` etc. must NOT be mistaken for a positional config path.
-    const a = parseArgs(["--apply", "--strip-host", "--only", "memory", "--risk", "safe"]);
-    assert.equal(a.utcpPath, "/tmp/my.utcp_config.json");
-  } finally {
-    if (prev === undefined) delete process.env.UTCP_CONFIG_PATH;
-    else process.env.UTCP_CONFIG_PATH = prev;
-  }
+  const a = parseArgs(
+    ["--apply", "--strip-host", "--only", "memory", "--risk", "safe"],
+    {
+      environment: { UTCP_CONFIG_FILE: "/tmp/my.utcp_config.json" },
+      dotenvValues: {},
+      cwd: "/workspace",
+      home: "/tmp/home"
+    }
+  );
+  assert.equal(a.utcpPath, "/tmp/my.utcp_config.json");
+});
+
+test("parseArgs rejects divergent canonical and legacy config paths", () => {
+  assert.throws(
+    () =>
+      parseArgs([], {
+        environment: { UTCP_CONFIG_FILE: "/tmp/canonical.json" },
+        dotenvValues: { UTCP_CONFIG_PATH: "/tmp/legacy.json" },
+        cwd: "/workspace",
+        home: "/tmp/home"
+      }),
+    /Conflicting UTCP config paths/
+  );
 });
 
 test("run dry-run produces a plan and writes nothing", () => {

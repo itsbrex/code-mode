@@ -33,7 +33,8 @@
     "noPropertyAccessFromIndexSignature": false
   },
   "include": [
-    "index.ts"
+    "index.ts",
+    "config-path.mjs"
   ],
   "exclude": [
     "node_modules",

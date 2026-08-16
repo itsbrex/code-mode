@@ -13,6 +13,12 @@ test("stdio server → safe direct manual", () => {
   });
 });
 
+test("manual identifier is sanitized while original host name remains as provenance", () => {
+  const r = convertServer("my-server.one", { command: "node", args: ["server.js"] });
+  assert.equal(r.manual.name, "my_server_one");
+  assert.deepEqual(Object.keys(r.manual.config.mcpServers), ["my-server.one"]);
+});
+
 test("remote server without auth → safe mcp-remote wrap", () => {
   const r = convertServer("context7", { url: "https://mcp.context7.com/mcp" });
   assert.equal(r.risk, "safe");

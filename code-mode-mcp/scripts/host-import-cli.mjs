@@ -8,6 +8,7 @@ import { addManualsToUtcp, stripFromClaudeJson, stripFromCodexToml } from "./lib
 import { loadPins } from "./lib/host-import/pins.mjs";
 import { ejectManuals } from "./lib/host-import/eject.mjs";
 import dotenv from "dotenv";
+import { resolveUtcpConfigPath } from "../config-path.mjs";
 
 // Resolve the UTCP config path from env / .env ONLY (env wins over .env), never
 // from argv. We deliberately avoid utcp-config.resolveConfigPath here: it also
@@ -15,22 +16,29 @@ import dotenv from "dotenv";
 // value (e.g. `--only memory`, `--risk safe`) for the path. host-import takes the
 // path solely from UTCP_CONFIG_PATH / UTCP_CONFIG_FILE; returns "" if unset so
 // main()'s --apply guard can surface a clear message.
-function safeResolveConfigPath() {
-  let fromDotenv = {};
-  try {
-    fromDotenv = dotenv.config().parsed ?? {};
-  } catch {
-    fromDotenv = {};
+function safeResolveConfigPath({
+  environment = process.env,
+  dotenvValues,
+  cwd = process.cwd()
+} = {}) {
+  let fromDotenv = dotenvValues;
+  if (fromDotenv === undefined) {
+    try {
+      fromDotenv = dotenv.config().parsed ?? {};
+    } catch {
+      fromDotenv = {};
+    }
   }
-  const p =
-    process.env.UTCP_CONFIG_PATH ||
-    process.env.UTCP_CONFIG_FILE ||
-    fromDotenv.UTCP_CONFIG_PATH ||
-    fromDotenv.UTCP_CONFIG_FILE;
-  return p ? path.resolve(p) : "";
+  return (
+    resolveUtcpConfigPath({
+      environment,
+      dotenvValues: fromDotenv,
+      cwd
+    }) ?? ""
+  );
 }
 
-export function parseArgs(argv) {
+export function parseArgs(argv, options = {}) {
   const has = (f) => argv.includes(f);
   const val = (f) => {
     const i = argv.indexOf(f);
@@ -38,7 +46,8 @@ export function parseArgs(argv) {
   };
   const risk = val("--risk");
   const only = val("--only");
-  const home = process.env.HOME || "";
+  const environment = options.environment ?? process.env;
+  const home = options.home ?? environment.HOME ?? "";
   // Path overrides let strip/eject (which otherwise write only the real host
   // configs) be rehearsed on copies. Default to the real per-host locations.
   const paths = defaultHostPaths(home);
@@ -50,12 +59,16 @@ export function parseArgs(argv) {
     stripHost: has("--strip-host"),
     risks: risk ? risk.split(",").map((s) => s.trim()).filter(Boolean) : ["safe", "partial"],
     only: only ? only.split(",").map((s) => s.trim()).filter(Boolean) : null,
-    pinsFile: val("--pins-file") || `${process.env.HOME || ""}/.host-import-pins.json`,
+    pinsFile: val("--pins-file") || `${home}/.host-import-pins.json`,
     pins: argv.reduce((acc, a, i) => (a === "--pin" && argv[i + 1] ? [...acc, argv[i + 1]] : acc), []),
     eject: val("--eject") ? val("--eject").split(",").map((s) => s.trim()).filter(Boolean) : null,
     to: val("--to") ? val("--to").split(",").map((s) => s.trim()).filter(Boolean) : ["claude-code"],
     paths,
-    utcpPath: safeResolveConfigPath(),
+    utcpPath: safeResolveConfigPath({
+      environment,
+      dotenvValues: options.dotenvValues,
+      cwd: options.cwd
+    }),
     backupRoot: path.join(home, ".host-import-backups"),
   };
 }
