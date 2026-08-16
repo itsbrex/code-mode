@@ -149,14 +149,23 @@ See [`code-mode-cli/`](./code-mode-cli) for full docs.
 
 ## Ready-to-Use MCP Server
 
-**On an MCP-only client (e.g. Claude Desktop)?** Use our plug-and-play MCP server. (If your agent has a shell, prefer the [`utcp` CLI](#recommended-for-shell-agents-the-utcp-cli) above.)
+**On an MCP-only client (e.g. Claude Desktop)?** Build private Local Bridge
+from this repository. It requires Node.js 22 or newer and is not published.
+
+```bash
+cd code-mode-mcp
+npm ci
+npm run build
+```
+
+Configure MCP host with absolute path to local build:
 
 ```json
 {
   "mcpServers": {
     "code-mode": {
-      "command": "npx",
-      "args": ["@utcp/code-mode-mcp"],
+      "command": "node",
+      "args": ["/absolute/path/to/code-mode-mcp/dist/index.js"],
       "env": {
         "UTCP_CONFIG_FILE": "/path/to/your/.utcp_config.json"
       }
@@ -165,13 +174,10 @@ See [`code-mode-cli/`](./code-mode-cli) for full docs.
 }
 ```
 
-**That's it!** No installation, no Node.js knowledge required. The [Code Mode MCP Server](https://github.com/universal-tool-calling-protocol/code-mode/tree/main/code-mode-mcp) automatically:
-- Downloads and runs the latest version via `npx`
-- Loads your tool configurations from JSON
-- Provides code execution capabilities to Claude Desktop
-- Gives you `call_tool_chain` as an MCP tool for TypeScript execution
-
-**Perfect for non-developers** who want Code Mode power in Claude Desktop!
+Private `@itsbrex/code-mode-mcp` preserves upstream 1.2.1 canonical wire and
+loads tools from `UTCP_CONFIG_FILE`. Local additions use versioned
+`bridge_v1_*` tools. See [`code-mode-mcp/`](./code-mode-mcp) for full setup
+and compatibility details.
 
 ## Direct TypeScript Usage
 

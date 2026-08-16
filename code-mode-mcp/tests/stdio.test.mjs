@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -60,21 +60,31 @@ test("packed server seam completes real stdio handshake with canonical wire", as
       "bridge_v1_call_tool_chain"
     ]
   );
-  const byName = Object.fromEntries(listed.tools.map((tool) => [tool.name, tool]));
-  assert.deepEqual(Object.keys(byName.list_tools.inputSchema.properties), []);
-  assert.deepEqual(Object.keys(byName.call_tool_chain.inputSchema.properties), [
-    "code",
-    "timeout",
-    "max_output_size"
-  ]);
-  assert.deepEqual(byName.list_tools.annotations, {
-    readOnlyHint: true,
-    openWorldHint: false,
-    idempotentHint: true
-  });
+  const canonicalSnapshot = JSON.parse(
+    readFileSync(
+      join(projectRoot, "tests", "fixtures", "canonical-wire-1.2.1.json"),
+      "utf8"
+    )
+  );
+  assert.deepEqual(listed.tools.slice(0, 7), canonicalSnapshot);
 
   const result = await client.callTool({ name: "list_tools", arguments: {} });
   assert.deepEqual(JSON.parse(result.content[0].text), { tools: [] });
+
+  const timeoutResult = await client.callTool({
+    name: "call_tool_chain",
+    arguments: {
+      code: "await new Promise(() => {}); return 'unreachable';",
+      timeout: 50,
+      max_output_size: 1_000
+    }
+  });
+  assert.equal(timeoutResult.isError, undefined);
+  const timeoutPayload = JSON.parse(timeoutResult.content[0].text);
+  assert.equal(timeoutPayload.success, true);
+  assert.equal(timeoutPayload.nonMcpContentResults, null);
+  assert.match(timeoutPayload.logs.join("\n"), /timeout after 50ms/i);
+
   assert.equal(stderr.join("").includes("Failed to start"), false);
 });
 

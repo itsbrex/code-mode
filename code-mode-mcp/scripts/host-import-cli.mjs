@@ -14,7 +14,7 @@ import { resolveUtcpConfigPath } from "../config-path.mjs";
 // from argv. We deliberately avoid utcp-config.resolveConfigPath here: it also
 // scans process.argv for a positional config path, which would mistake a flag
 // value (e.g. `--only memory`, `--risk safe`) for the path. host-import takes the
-// path solely from UTCP_CONFIG_PATH / UTCP_CONFIG_FILE; returns "" if unset so
+// path solely from UTCP_CONFIG_FILE / UTCP_CONFIG_PATH; returns "" if unset so
 // main()'s --apply guard can surface a clear message.
 function safeResolveConfigPath({
   environment = process.env,
@@ -136,12 +136,12 @@ function main() {
     process.exit(1);
   }
   // Eject reads (and rewrites) the UTCP config directly — guard it the same way
-  // so a missing/unset UTCP_CONFIG_PATH fails with a message, not an ENOENT stack.
+    // so a missing/unset UTCP_CONFIG_FILE fails with a message, not an ENOENT stack.
   if (opts.eject && opts.eject.length && !existsSync(opts.utcpPath)) {
     console.error(
       opts.utcpPath
         ? `Refusing to --eject: UTCP config not found at ${opts.utcpPath}`
-        : "Refusing to --eject: set UTCP_CONFIG_PATH (or UTCP_CONFIG_FILE) to your .utcp_config.json"
+          : "Refusing to --eject: set UTCP_CONFIG_FILE (or legacy UTCP_CONFIG_PATH) to your .utcp_config.json"
     );
     process.exit(1);
   }

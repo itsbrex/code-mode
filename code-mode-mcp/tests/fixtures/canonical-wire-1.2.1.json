@@ -1,0 +1,171 @@
+[
+  {
+    "name": "register_manual",
+    "title": "Register a UTCP Manual",
+    "description": "Registers a new tool provider by providing its call template.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "manual_call_template": {
+          "description": "The call template for the UTCP Manual endpoint."
+        }
+      },
+      "required": ["manual_call_template"],
+      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "execution": {
+      "taskSupport": "forbidden"
+    }
+  },
+  {
+    "name": "deregister_manual",
+    "title": "Deregister a UTCP Manual",
+    "description": "Deregisters a tool provider from the UTCP client.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "manual_name": {
+          "type": "string",
+          "description": "The name of the manual to deregister."
+        }
+      },
+      "required": ["manual_name"],
+      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "execution": {
+      "taskSupport": "forbidden"
+    }
+  },
+  {
+    "name": "search_tools",
+    "title": "Search for UTCP Tools",
+    "description": "Searches for relevant tools based on a task description.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "task_description": {
+          "type": "string",
+          "description": "A natural language description of the task."
+        },
+        "limit": {
+          "type": "number",
+          "default": 10
+        }
+      },
+      "required": ["task_description"],
+      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
+    "execution": {
+      "taskSupport": "forbidden"
+    }
+  },
+  {
+    "name": "list_tools",
+    "title": "List All Registered UTCP Tools",
+    "description": "Returns a list of all tool names currently registered.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
+    "execution": {
+      "taskSupport": "forbidden"
+    }
+  },
+  {
+    "name": "get_required_keys_for_tool",
+    "title": "Get Required Variables for Tool",
+    "description": "Get required environment variables for a registered tool.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "tool_name": {
+          "type": "string",
+          "description": "Name of the tool to get required variables for."
+        }
+      },
+      "required": ["tool_name"],
+      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
+    "execution": {
+      "taskSupport": "forbidden"
+    }
+  },
+  {
+    "name": "tools_info",
+    "title": "Get Tools Information with TypeScript Interface",
+    "description": "Get complete information about a specified list of tools, including TypeScript interface definition.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "tool_names": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Names of the tools to get complete information for."
+        }
+      },
+      "required": ["tool_names"],
+      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
+    "execution": {
+      "taskSupport": "forbidden"
+    }
+  },
+  {
+    "name": "call_tool_chain",
+    "title": "Execute TypeScript Code with Tool Access",
+    "description": "Execute TypeScript code with direct access to all registered tools as hierarchical functions (e.g., manual.tool()).",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "description": "TypeScript code to execute with access to all registered tools."
+        },
+        "timeout": {
+          "type": "number",
+          "default": 30000,
+          "description": "Optional timeout in milliseconds (default: 30000)."
+        },
+        "max_output_size": {
+          "type": "number",
+          "default": 200000,
+          "description": "Optional maximum output size in characters (default: 200000)."
+        }
+      },
+      "required": ["code"],
+      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "execution": {
+      "taskSupport": "forbidden"
+    }
+  }
+]

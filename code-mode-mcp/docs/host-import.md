@@ -7,10 +7,10 @@ Claude Desktop, and Codex) into the UTCP config so `code-mode` federates them.
 
 ```bash
 # Dry-run: show what would migrate (default; writes nothing)
-UTCP_CONFIG_PATH=/abs/hide-some.utcp_config.json npm run host-import
+UTCP_CONFIG_FILE=/abs/hide-some.utcp_config.json npm run host-import
 
 # Apply: write deduped manuals into the UTCP config (backup-on-write)
-UTCP_CONFIG_PATH=/abs/hide-some.utcp_config.json npm run host-import -- --apply
+UTCP_CONFIG_FILE=/abs/hide-some.utcp_config.json npm run host-import -- --apply
 
 # Apply + remove the migrated servers from the host configs (backed up)
 ... npm run host-import -- --apply --strip-host
@@ -34,8 +34,9 @@ UTCP_CONFIG_PATH=/abs/hide-some.utcp_config.json npm run host-import -- --apply
 
 ## Safe testing
 
-`--apply` only ever writes the UTCP config (`UTCP_CONFIG_PATH`); host configs are
-read-only in that mode, so applying to a throwaway UTCP path is always safe.
+`--apply` only ever writes the UTCP config (`UTCP_CONFIG_FILE`; legacy
+`UTCP_CONFIG_PATH` remains a fallback); host configs are read-only in that
+mode, so applying to a throwaway UTCP path is always safe.
 
 `--strip-host` and `--eject`, by contrast, write the *real* host configs by
 default. To rehearse them without touching your live `~/.claude.json` /

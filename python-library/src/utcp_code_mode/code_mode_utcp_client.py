@@ -345,8 +345,8 @@ import asyncio
             import concurrent.futures
             loop = asyncio.get_event_loop()
             
-            # Run the user function in a thread pool executor
-            # This allows us to interrupt long-running synchronous code
+            # Run the user function in a thread pool executor without blocking
+            # the event loop. Timeout cancellation cannot stop this thread.
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
                 future = loop.run_in_executor(executor, user_function)
                 result = await future

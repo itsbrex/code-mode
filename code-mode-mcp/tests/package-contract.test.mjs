@@ -43,3 +43,13 @@ test("Node 22 floor is consistent across Node package manifests and locks", () =
     assert.equal(lock.packages[""].engines.node, ">=22", `${directory} lock root`);
   }
 });
+
+test("CLI source maintenance uses refreshed UTCP adapter baselines", () => {
+  const manifest = readJson(join(repositoryRoot, "code-mode-cli", "package.json"));
+  const lock = readJson(join(repositoryRoot, "code-mode-cli", "package-lock.json"));
+
+  assert.equal(manifest.dependencies["@utcp/sdk"], "^1.1.2");
+  assert.equal(manifest.dependencies["@utcp/http"], "^1.1.11");
+  assert.equal(lock.packages["node_modules/@utcp/sdk"].version, "1.1.2");
+  assert.equal(lock.packages["node_modules/@utcp/http"].version, "1.1.11");
+});

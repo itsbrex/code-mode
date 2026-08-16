@@ -114,4 +114,5 @@ utcp login <manual>
 
 - The bundled `@utcp/cli` plugin can run arbitrary local commands — only register
   manuals from trusted sources.
-- This is for shell/sandbox agents. On an MCP client, use `@utcp/code-mode-mcp`.
+- This is for shell/sandbox agents. On an MCP client, run the private local
+  `@itsbrex/code-mode-mcp` build; no public Local Bridge package is published.
