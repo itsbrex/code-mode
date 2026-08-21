@@ -6,7 +6,6 @@ import {
   buildPromptText,
   createCleanToolNameClient,
   findToolByName,
-  getBridgeExtensionDefinitions,
   getCanonicalToolDefinitions,
   getCompatibilityToolDefinitions,
   getToolDefinitions,
@@ -338,19 +337,22 @@ test("canonical MCP wire exposes exact upstream 1.2.1 tool names", () => {
   );
 });
 
-test("compatibility alias and Local Bridge additions stay outside canonical wire", () => {
+test("compatibility alias is the only tool outside the canonical wire", () => {
   assert.deepEqual(
     getCompatibilityToolDefinitions().map((definition) => definition.name),
     ["get_required_variables_for_tool"]
   );
   assert.deepEqual(
-    getBridgeExtensionDefinitions().map((definition) => definition.name),
+    getToolDefinitions().map((definition) => definition.name),
     [
-      "bridge_v1_register_manual",
-      "bridge_v1_search_tools",
-      "bridge_v1_list_tools",
-      "bridge_v1_tools_info",
-      "bridge_v1_call_tool_chain"
+      "register_manual",
+      "deregister_manual",
+      "search_tools",
+      "list_tools",
+      "get_required_keys_for_tool",
+      "tools_info",
+      "call_tool_chain",
+      "get_required_variables_for_tool"
     ]
   );
 });
@@ -566,96 +568,6 @@ test("canonical call_tool_chain returns raw errors and marks capped output", asy
   assert.match(capped.content.at(-1).text, /\.\.\.\nmax_output_size exceeded$/);
 });
 
-test("bridge_v1_list_tools returns UTCP names and sandbox access names", async () => {
-  const client = createClientStub();
-  const listTools = getBridgeExtensionDefinitions({ getClient: async () => client }).find(
-    (definition) => definition.name === "bridge_v1_list_tools"
-  );
-
-  const payload = parseTextPayload(await listTools.handler({}));
-  assert.equal(payload.total, 2);
-  assert.equal(payload.count, 2);
-  assert.equal(payload.offset, 0);
-  assert.equal(payload.limit, 100);
-  assert.equal(payload.tools[0].utcp_name, "weather.get_current");
-  assert.equal(payload.tools[0].access_name, "weather.get_current");
-  assert.equal("description" in payload.tools[0], false);
-  assert.equal("tags" in payload.tools[0], false);
-});
-
-test("bridge_v1_list_tools paginates compact output by default", async () => {
-  const manyTools = Array.from({ length: 125 }, (_, index) => ({
-    name: `manual.tool_${index}`,
-    description: "Large description ".repeat(100),
-    tags: ["large", "metadata"],
-    inputs: { type: "object", properties: {} },
-    outputs: { type: "object", properties: {} }
-  }));
-  const client = {
-    ...createClientStub(),
-    async getTools() {
-      return manyTools;
-    }
-  };
-  const listTools = getBridgeExtensionDefinitions({ getClient: async () => client }).find(
-    (definition) => definition.name === "bridge_v1_list_tools"
-  );
-
-  const payload = parseTextPayload(await listTools.handler({}));
-
-  assert.equal(payload.total, 125);
-  assert.equal(payload.count, 100);
-  assert.equal(payload.next_offset, 100);
-  assert.equal(payload.tools.length, 100);
-  assert.equal("description" in payload.tools[0], false);
-  assert.equal("tags" in payload.tools[0], false);
-});
-
-test("bridge_v1_list_tools can include metadata for a selected page", async () => {
-  const client = createClientStub();
-  const listTools = getBridgeExtensionDefinitions({ getClient: async () => client }).find(
-    (definition) => definition.name === "bridge_v1_list_tools"
-  );
-
-  const payload = parseTextPayload(
-    await listTools.handler({ limit: 1, offset: 1, include_metadata: true })
-  );
-
-  assert.equal(payload.total, 2);
-  assert.equal(payload.count, 1);
-  assert.equal(payload.offset, 1);
-  assert.equal(payload.next_offset, undefined);
-  assert.equal(payload.tools[0].utcp_name, "reporting.generate_insights");
-  assert.equal(payload.tools[0].description, "Generate summary insights for a report.");
-  assert.deepEqual(payload.tools[0].tags, ["reporting"]);
-});
-
-test("bridge_v1 discovery tools return full UTCP-facing interface details", async () => {
-  const client = createClientStub();
-  const definitions = getBridgeExtensionDefinitions({ getClient: async () => client });
-  const searchTools = definitions.find(
-    (definition) => definition.name === "bridge_v1_search_tools"
-  );
-  const toolsInfo = definitions.find(
-    (definition) => definition.name === "bridge_v1_tools_info"
-  );
-
-  const searchPayload = parseTextPayload(
-    await searchTools.handler({ task_description: "weather", limit: 1 })
-  );
-  assert.equal(searchPayload.tools.length, 1);
-  assert.equal(searchPayload.tools[0].utcp_name, "weather.get_current");
-  assert.equal(searchPayload.tools[0].access_name, "weather.get_current");
-  assert.match(searchPayload.tools[0].typescript_interface, /Access as:/);
-
-  const infoPayload = parseTextPayload(
-    await toolsInfo.handler({ tool_names: [searchPayload.tools[0].access_name, "missing.tool"] })
-  );
-  assert.equal(infoPayload.tools.length, 1);
-  assert.equal(infoPayload.tools[0].description, "Get the current weather for a city.");
-  assert.deepEqual(infoPayload.missing_tools, ["missing.tool"]);
-});
-
 test("MCP tools expose clean manual.tool names when manual and server names duplicate", async () => {
   const calls = [];
   const baseClient = {
@@ -689,36 +601,27 @@ test("MCP tools expose clean manual.tool names when manual and server names dupl
   };
 
   const client = createCleanToolNameClient(baseClient);
-  const definitions = getBridgeExtensionDefinitions({ getClient: async () => client });
-  const listTools = definitions.find(
-    (definition) => definition.name === "bridge_v1_list_tools"
-  );
-  const toolsInfo = definitions.find(
-    (definition) => definition.name === "bridge_v1_tools_info"
-  );
   const requiredVariables = getCompatibilityToolDefinitions({
     getClient: async () => client
   }).find(
     (definition) => definition.name === "get_required_variables_for_tool"
   );
 
-  const listPayload = parseTextPayload(await listTools.handler({}));
+  const [firstExposed] = await client.getTools();
   assert.equal(
-    listPayload.tools[0].utcp_name,
+    firstExposed.utcp_name,
     "typefully_remote_mcp.typefully-remote-mcp.typefully_list_drafts"
   );
-  assert.equal(listPayload.tools[0].access_name, "typefully_remote_mcp.typefully_list_drafts");
+  assert.equal(firstExposed.name, "typefully_remote_mcp.typefully_list_drafts");
 
-  const infoPayload = parseTextPayload(
-    await toolsInfo.handler({
-      tool_names: [
-        "typefully_remote_mcp.typefully_list_drafts",
-        "typefully_remote_mcp.typefully-remote-mcp.typefully_get_draft"
-      ]
-    })
+  const lookedUp = await Promise.all(
+    [
+      "typefully_remote_mcp.typefully_list_drafts",
+      "typefully_remote_mcp.typefully-remote-mcp.typefully_get_draft"
+    ].map((name) => findToolByName(client, name))
   );
   assert.deepEqual(
-    infoPayload.tools.map((tool) => tool.utcp_name),
+    lookedUp.map((found) => found.utcpName),
     [
       "typefully_remote_mcp.typefully-remote-mcp.typefully_list_drafts",
       "typefully_remote_mcp.typefully-remote-mcp.typefully_get_draft"
@@ -799,16 +702,13 @@ test("MCP name map removes duplicated server and tool prefixes without changing 
 test("MCP name map keeps access names unique across alias and sanitizer collisions", async () => {
   const baseClient = createNameMapClient(aliasCollisionMcpTools);
   const client = createCleanToolNameClient(baseClient);
-  const listTools = getBridgeExtensionDefinitions({ getClient: async () => client }).find(
-    (definition) => definition.name === "bridge_v1_list_tools"
-  );
 
-  const payload = parseTextPayload(await listTools.handler({}));
-  const accessNames = payload.tools.map((tool) => tool.access_name);
+  const exposed = await client.getTools();
+  const accessNames = exposed.map((tool) => tool.name);
 
   assert.equal(new Set(accessNames).size, aliasCollisionMcpTools.length);
   assert.deepEqual(
-    payload.tools.map((tool) => tool.utcp_name),
+    exposed.map((tool) => tool.utcp_name ?? tool.name),
     aliasCollisionMcpTools.map((tool) => tool.name)
   );
   assert.equal(await findToolByName(client, "docs.server_a_read"), null);
@@ -816,13 +716,12 @@ test("MCP name map keeps access names unique across alias and sanitizer collisio
   const reversedClient = createCleanToolNameClient(
     createNameMapClient([...aliasCollisionMcpTools].reverse())
   );
-  const reversedListTools = getBridgeExtensionDefinitions({
-    getClient: async () => reversedClient
-  }).find((definition) => definition.name === "bridge_v1_list_tools");
-  const reversedPayload = parseTextPayload(await reversedListTools.handler({}));
+  const reversedExposed = await reversedClient.getTools();
   assert.deepEqual(
-    Object.fromEntries(payload.tools.map((tool) => [tool.utcp_name, tool.access_name])),
-    Object.fromEntries(reversedPayload.tools.map((tool) => [tool.utcp_name, tool.access_name]))
+    Object.fromEntries(exposed.map((tool) => [tool.utcp_name ?? tool.name, tool.name])),
+    Object.fromEntries(
+      reversedExposed.map((tool) => [tool.utcp_name ?? tool.name, tool.name])
+    )
   );
 
   for (const [index, accessName] of accessNames.entries()) {
@@ -856,16 +755,13 @@ test("legacy aliases cannot overwrite collision-disambiguated access routes", as
   const tools = [...aliasCollisionMcpTools, legacyCollisionTool];
   const baseClient = createNameMapClient(tools);
   const client = createCleanToolNameClient(baseClient);
-  const listTools = getBridgeExtensionDefinitions({ getClient: async () => client }).find(
-    (definition) => definition.name === "bridge_v1_list_tools"
-  );
 
-  const payload = parseTextPayload(await listTools.handler({}));
-  const firstAccessName = payload.tools.find(
-    (tool) => tool.utcp_name === firstRawName
-  ).access_name;
+  const exposed = await client.getTools();
+  const firstAccessName = exposed.find(
+    (tool) => (tool.utcp_name ?? tool.name) === firstRawName
+  ).name;
 
-  assert.equal(new Set(payload.tools.map((tool) => tool.access_name)).size, tools.length);
+  assert.equal(new Set(exposed.map((tool) => tool.name)).size, tools.length);
   await client.callTool(firstAccessName, { route: "disambiguated" });
   assert.deepEqual(baseClient.calls.filter((call) => call.kind === "callTool"), [
     {
@@ -882,15 +778,12 @@ test("MCP name map preserves legacy lookup and routes raw, legacy, and access ca
   const accessName = "google_sheets.read_range";
   const baseClient = createNameMapClient(duplicatePrefixMcpTools);
   const client = createCleanToolNameClient(baseClient);
-  const toolsInfo = getBridgeExtensionDefinitions({ getClient: async () => client }).find(
-    (definition) => definition.name === "bridge_v1_tools_info"
-  );
 
-  const infoPayload = parseTextPayload(
-    await toolsInfo.handler({ tool_names: [rawName, legacyName, accessName] })
+  const lookedUp = await Promise.all(
+    [rawName, legacyName, accessName].map((name) => findToolByName(client, name))
   );
   assert.deepEqual(
-    infoPayload.tools.map((tool) => tool.utcp_name),
+    lookedUp.map((found) => found.utcpName),
     [rawName, rawName, rawName]
   );
 
@@ -903,7 +796,7 @@ test("MCP name map preserves legacy lookup and routes raw, legacy, and access ca
   );
 });
 
-test("bridge_v1_call_tool_chain routes concise sandbox access through canonical raw tool name", async () => {
+test("canonical call_tool_chain routes concise sandbox access through canonical raw tool name", async () => {
   const rawName = duplicatePrefixMcpTools[0].name;
   const calls = [];
   const baseClient = Object.assign(Object.create(CodeModeUtcpClient.prototype), {
@@ -931,51 +824,44 @@ test("bridge_v1_call_tool_chain routes concise sandbox access through canonical 
     }
   });
   const client = createCleanToolNameClient(baseClient);
-  const callToolChain = getBridgeExtensionDefinitions({ getClient: async () => client }).find(
-    (definition) => definition.name === "bridge_v1_call_tool_chain"
+  const callToolChain = getCanonicalToolDefinitions({ getClient: async () => client }).find(
+    (definition) => definition.name === "call_tool_chain"
   );
 
   const payload = parseTextPayload(
     await callToolChain.handler({
       code: 'return google_sheets.read_range({ range: "Sheet1!A1:B2" });',
       timeout: 5_000,
-      memory_limit: 64,
       max_output_size: 10_000
     })
   );
 
-  assert.deepEqual(payload.result, { routed: rawName, range: "Sheet1!A1:B2" });
+  assert.equal(payload.success, true);
+  assert.deepEqual(payload.nonMcpContentResults, {
+    routed: rawName,
+    range: "Sheet1!A1:B2"
+  });
   assert.deepEqual(calls, [
     { toolName: rawName, toolArgs: { range: "Sheet1!A1:B2" } }
   ]);
 });
 
-test("tool definition aggregation routes canonical and extension handlers to separate clients", async () => {
+test("tool definition aggregation serves canonical and compatibility tools from one client", async () => {
   const calls = [];
-  const canonicalClient = {
+  const client = {
     ...createClientStub(),
     async getTools() {
-      calls.push("canonical");
+      calls.push("getTools");
       return sampleTools;
     }
   };
-  const extensionClient = {
-    ...createClientStub(),
-    async getTools() {
-      calls.push("extension");
-      return sampleTools;
-    }
-  };
-  const definitions = getToolDefinitions({
-    getClient: async () => canonicalClient,
-    getExtensionClient: async () => extensionClient
-  });
+  const definitions = getToolDefinitions({ getClient: async () => client });
 
   await definitions.find((definition) => definition.name === "list_tools").handler({});
   await definitions
-    .find((definition) => definition.name === "bridge_v1_list_tools")
-    .handler({});
-  assert.deepEqual(calls, ["canonical", "extension"]);
+    .find((definition) => definition.name === "get_required_variables_for_tool")
+    .handler({ tool_name: "weather.get_current" });
+  assert.deepEqual(calls, ["getTools", "getTools"]);
 });
 
 test("server config resolution accepts equal legacy value and rejects conflicts", () => {
@@ -1040,22 +926,18 @@ test("MCP clean-name aliases do not shadow existing canonical tool names", async
   };
 
   const client = createCleanToolNameClient(baseClient);
-  const definitions = getBridgeExtensionDefinitions({ getClient: async () => client });
-  const listTools = definitions.find(
-    (definition) => definition.name === "bridge_v1_list_tools"
-  );
 
-  const listPayload = parseTextPayload(await listTools.handler({}));
+  const exposed = await client.getTools();
   assert.deepEqual(
-    listPayload.tools.map((tool) => tool.utcp_name),
+    exposed.map((tool) => tool.utcp_name ?? tool.name),
     [
       "typefully_remote_mcp.typefully-remote-mcp.typefully_list_drafts",
       "typefully_remote_mcp.typefully_list_drafts"
     ]
   );
-  assert.equal(new Set(listPayload.tools.map((tool) => tool.access_name)).size, 2);
+  assert.equal(new Set(exposed.map((tool) => tool.name)).size, 2);
   assert.deepEqual(
-    Object.fromEntries(listPayload.tools.map((tool) => [tool.utcp_name, tool.access_name])),
+    Object.fromEntries(exposed.map((tool) => [tool.utcp_name ?? tool.name, tool.name])),
     {
       "typefully_remote_mcp.typefully-remote-mcp.typefully_list_drafts":
         "typefully_remote_mcp.typefully_remote_mcp_typefully_list_drafts",
@@ -1086,44 +968,40 @@ test("get_required_variables_for_tool reflects UTCP variable semantics", async (
   assert.deepEqual(payload.required_variables, ["API_KEY", "ACCOUNT_ID"]);
 });
 
-test("wrapper flow supports inspect then execute with sync call_tool_chain output", async () => {
+test("wrapper flow supports inspect then execute over the canonical wire", async () => {
   const client = createClientStub();
-  const definitions = getBridgeExtensionDefinitions({ getClient: async () => client });
+  const definitions = getCanonicalToolDefinitions({ getClient: async () => client });
   const searchTools = definitions.find(
-    (definition) => definition.name === "bridge_v1_search_tools"
+    (definition) => definition.name === "search_tools"
   );
-  const toolsInfo = definitions.find(
-    (definition) => definition.name === "bridge_v1_tools_info"
-  );
+  const toolsInfo = definitions.find((definition) => definition.name === "tools_info");
   const callToolChain = definitions.find(
-    (definition) => definition.name === "bridge_v1_call_tool_chain"
+    (definition) => definition.name === "call_tool_chain"
   );
 
   const searchPayload = parseTextPayload(
     await searchTools.handler({ task_description: "weather", limit: 1 })
   );
-  const accessName = searchPayload.tools[0].access_name;
+  const accessName = searchPayload.tools[0].name;
 
-  const infoPayload = parseTextPayload(
-    await toolsInfo.handler({ tool_names: [accessName] })
-  );
-  assert.equal(infoPayload.tools[0].access_name, accessName);
+  const infoResponse = await toolsInfo.handler({ tool_names: [accessName] });
+  assert.match(infoResponse.content[0].text, new RegExp(`Access as: ${accessName}`));
 
   const executionPayload = parseTextPayload(
     await callToolChain.handler({
       code: `return ${accessName}({ city: "London" });`,
       timeout: 1_000,
-      memory_limit: 64,
       max_output_size: 10_000
     })
   );
 
-  assert.equal(executionPayload.result.summary, "ok");
+  assert.equal(executionPayload.success, true);
+  assert.equal(executionPayload.nonMcpContentResults.summary, "ok");
   assert.deepEqual(executionPayload.logs, ["executed"]);
   assert.deepEqual(client.calls.at(-1), {
     kind: "callToolChain",
     code: `return ${accessName}({ city: "London" });`,
     timeout: 1_000,
-    memoryLimit: 64
+    memoryLimit: undefined
   });
 });

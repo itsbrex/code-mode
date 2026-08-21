@@ -1,7 +1,7 @@
 # PRODUCT.md — code-mode-mcp
 
 ## What this is
-`@itsbrex/code-mode-mcp` is a private Local Bridge over `@utcp/code-mode`. It preserves the upstream 1.2.1 seven-tool wire and keeps local additions behind versioned `bridge_v1_*` tools.
+`@itsbrex/code-mode-mcp` is a private Local Bridge over `@utcp/code-mode`. It preserves the upstream 1.2.1 seven-tool wire and serves it through an exclusion-aware client (per-manual tool exclusion, clean access-name aliases, exclusion-aware sandbox bindings).
 
 A per-manual **tool exclusion** feature lets a `.utcp_config.json` hide tools from each manual via three optional fields: `exclude_tools` (denylist), `default_disabled` + `include_tools` (allowlist).
 

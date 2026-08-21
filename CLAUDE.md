@@ -54,7 +54,7 @@ pytest
 
 ### MCP Server (`code-mode-mcp/`)
 
-- **Package**: private local bridge `@itsbrex/code-mode-mcp` v1.2.1
+- **Package**: private local bridge `@itsbrex/code-mode-mcp` v1.3.0
 - **License**: MIT (differs from root MPL-2.0)
 - **Binary**: `code-mode-mcp` → `dist/index.js`
 - **Build**: `tsc`

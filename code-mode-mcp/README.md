@@ -9,8 +9,9 @@ This server keeps the same execution model as `CodeModeUtcpClient`:
 - inspect interfaces before using them
 - execute sandbox code with `manual.tool(args)` (async/await supported)
 - preserve upstream 1.2.1 canonical result/content-block behavior
-- expose local pagination, metadata, clean access names, and `{ result, logs }`
-  only through versioned `bridge_v1_*` extensions
+- serve the canonical wire through an exclusion-aware client: per-manual tool
+  exclusion, clean access-name aliases, and the sandbox tool set all apply
+  while schemas and envelopes stay identical to upstream
 
 ## Quick Start
 
@@ -92,9 +93,9 @@ sources you trust.
 ## Disabling tools per manual
 
 Each entry in `manual_call_templates` accepts three optional Local Bridge
-fields. They control tools exposed through `bridge_v1_list_tools`,
-`bridge_v1_search_tools`, `bridge_v1_tools_info`, and
-`bridge_v1_call_tool_chain`. Canonical tools retain upstream behavior.
+fields. They control the tools exposed through the canonical wire —
+`list_tools`, `search_tools`, `tools_info`, `get_required_keys_for_tool`, and
+`call_tool_chain` — while the tool schemas stay identical to upstream.
 
 | Field | Type | Behavior |
 | --- | --- | --- |
@@ -102,7 +103,7 @@ fields. They control tools exposed through `bridge_v1_list_tools`,
 | `default_disabled` | `boolean` | When `true`, hide every tool from this manual except those in `include_tools`. |
 | `include_tools` | `string[]` | Allowlist used only when `default_disabled` is `true`. |
 
-A name in `exclude_tools` / `include_tools` matches if it equals any form of the tool: the full canonical name (`manual.server.tool`), the short name (`server.tool`), the bare tool name (`tool`), the clean alias shown in `bridge_v1_list_tools` (`manual.tool`), or the sandbox access name. The bare tool name (e.g. `mail_delete`) is the most convenient and is what the examples below use.
+A name in `exclude_tools` / `include_tools` matches if it equals any form of the tool: the full canonical name (`manual.server.tool`), the short name (`server.tool`), the bare tool name (`tool`), the clean alias shown in `list_tools` (`manual.tool`), or the sandbox access name. The bare tool name (e.g. `mail_delete`) is the most convenient and is what the examples below use.
 
 **Denylist — hide two noisy tools:**
 
@@ -127,12 +128,13 @@ A name in `exclude_tools` / `include_tools` matches if it equals any form of the
 }
 ```
 
-Hidden tools are removed from versioned Bridge Extension discovery and
-execution. Because `bridge_v1_call_tool_chain` binds only visible tools, hidden
-tools have no sandbox binding. Direct extension-client lookup rejects them with
+Hidden tools are removed from discovery and execution. Because
+`call_tool_chain` binds only visible tools, hidden tools have no sandbox
+binding. Direct lookup rejects them with
 `Tool '<name>' is disabled by the manual exclusion config.`
 
-Same fields work with `bridge_v1_register_manual` for runtime registration.
+Same fields work with `register_manual` for runtime registration — they are
+recorded locally and stripped before the template reaches the SDK.
 
 ## Building exclusion configs
 
@@ -193,15 +195,8 @@ Canonical upstream 1.2.1 wire:
 - `tools_info`
 - `call_tool_chain`
 
-`get_required_variables_for_tool` is deprecated compatibility alias.
-
-Versioned Local Bridge extensions:
-
-- `bridge_v1_register_manual`
-- `bridge_v1_search_tools`
-- `bridge_v1_list_tools`
-- `bridge_v1_tools_info`
-- `bridge_v1_call_tool_chain`
+`get_required_variables_for_tool` is deprecated compatibility alias
+(scheduled for removal at wave 7).
 
 ## Tool Discovery Flow
 
@@ -244,9 +239,7 @@ Canonical final text block preserves upstream envelope:
 }
 ```
 
-MCP content blocks pass through before final text block. Versioned
-`bridge_v1_call_tool_chain` retains local `{ result, logs }` envelope and
-optional memory limit.
+MCP content blocks pass through before final text block.
 
 ## Example
 

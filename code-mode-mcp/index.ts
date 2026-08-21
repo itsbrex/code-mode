@@ -41,9 +41,6 @@ export * from "./tool-exclusion.js";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const DEFAULT_LIST_TOOLS_LIMIT = 100;
-const MAX_LIST_TOOLS_LIMIT = 500;
-
 // Read-only bridge tools advertise MCP annotations so hosts can treat them as
 // side-effect-free (ported from upstream's readOnlyHint change onto our
 // getToolDefinitions architecture).
@@ -54,7 +51,7 @@ const READ_ONLY_ANNOTATIONS = {
 } as const;
 
 let utcpClient: CodeModeUtcpClient | null = null;
-let bridgeExtensionClient: CodeModeMcpClientLike | null = null;
+let exclusionAwareClient: CodeModeMcpClientLike | null = null;
 let exclusionRegistry: ToolExclusionRegistry = new Map();
 
 export interface CodeModeMcpClientLike {
@@ -70,7 +67,6 @@ export interface CodeModeMcpClientLike {
 
 export interface ToolRuntimeOptions {
   getClient?: () => Promise<CodeModeMcpClientLike>;
-  getExtensionClient?: () => Promise<CodeModeMcpClientLike>;
 }
 
 interface ToolDefinition {
@@ -87,19 +83,6 @@ interface SerializedToolSummary {
   access_name: string;
   description: string;
   tags: string[];
-}
-
-interface SerializedToolListItem {
-  utcp_name: string;
-  access_name: string;
-  description?: string;
-  tags?: string[];
-}
-
-interface SerializedToolInfo extends SerializedToolSummary {
-  inputs: unknown;
-  outputs: unknown;
-  typescript_interface: string;
 }
 
 interface ToolAliasIndex {
@@ -474,7 +457,6 @@ ${CodeModeUtcpClient.AGENT_PROMPT_TEMPLATE}
 - Tool calls work both ways — \`manual.tool(args)\` (the host bridges the async call synchronously) or \`await manual.tool(args)\` if you prefer async style. Both are valid; pick whichever reads better.
 - Executed code must be valid JavaScript syntax: do not put type annotations (\`: string\`) or \`interface\` declarations in the code you run. The generated TypeScript interfaces are reference documentation for building correct argument objects — they are not runnable syntax and will throw a SyntaxError inside the sandbox.
 - Canonical \`call_tool_chain\` returns the upstream \`{ success, nonMcpContentResults, logs }\` text envelope while preserving MCP content blocks.
-- Versioned \`bridge_v1_*\` tools expose Local Bridge metadata, pagination, clean access names, memory limits, and the \`{ result, logs }\` extension envelope.
 
 Remember: discover first, inspect interfaces second, execute code last.`;
 }
@@ -489,40 +471,6 @@ function serializeToolSummary(tool: Tool): SerializedToolSummary {
     access_name: utcpNameToTsInterfaceName(tool.name),
     description: tool.description ?? "",
     tags: Array.isArray(tool.tags) ? tool.tags : []
-  };
-}
-
-function serializeToolListItem(tool: Tool, includeMetadata: boolean): SerializedToolListItem {
-  const summary = serializeToolSummary(tool);
-  if (includeMetadata) {
-    return summary;
-  }
-
-  return {
-    utcp_name: summary.utcp_name,
-    access_name: summary.access_name
-  };
-}
-
-function normalizeListToolsPagination(input: any): { limit: number; offset: number } {
-  const rawLimit = Number.isInteger(input?.limit) ? input.limit : DEFAULT_LIST_TOOLS_LIMIT;
-  const rawOffset = Number.isInteger(input?.offset) ? input.offset : 0;
-
-  return {
-    limit: Math.min(Math.max(rawLimit, 1), MAX_LIST_TOOLS_LIMIT),
-    offset: Math.max(rawOffset, 0)
-  };
-}
-
-function serializeToolInfo(
-  client: Pick<CodeModeMcpClientLike, "toolToTypeScriptInterface">,
-  tool: Tool
-): SerializedToolInfo {
-  return {
-    ...serializeToolSummary(tool),
-    inputs: tool.inputs ?? null,
-    outputs: tool.outputs ?? null,
-    typescript_interface: client.toolToTypeScriptInterface(tool)
   };
 }
 
@@ -594,52 +542,6 @@ function errorResponse(message: string): { content: ContentBlock[]; isError: tru
   };
 }
 
-function buildCallToolChainResponse(
-  result: unknown,
-  logs: string[],
-  maxOutputSize: number
-): { content: ContentBlock[] } {
-  const content: ContentBlock[] = [];
-  const nonMcpResults: unknown[] = [];
-
-  if (Array.isArray(result)) {
-    for (const item of result) {
-      if (ContentBlockSchema.safeParse(item).success) {
-        content.push(item as ContentBlock);
-      } else {
-        nonMcpResults.push(item);
-      }
-    }
-  } else if (ContentBlockSchema.safeParse(result).success) {
-    content.push(result as ContentBlock);
-  } else {
-    nonMcpResults.push(result);
-  }
-
-  const plainResult =
-    nonMcpResults.length === 0
-      ? null
-      : nonMcpResults.length === 1
-        ? nonMcpResults[0]
-        : nonMcpResults;
-
-  content.push({
-    type: "text",
-    text: truncateText(
-      safeJsonStringify(
-        {
-          result: plainResult,
-          logs
-        },
-        2
-      ),
-      maxOutputSize
-    )
-  });
-
-  return { content };
-}
-
 function buildCanonicalCallToolChainResponse(
   result: unknown,
   logs: string[],
@@ -679,278 +581,15 @@ function buildCanonicalCallToolChainResponse(
   return { content };
 }
 
-function getLegacyToolDefinitions(options: ToolRuntimeOptions = {}): ToolDefinition[] {
-  const getClient = options.getClient ?? initializeUtcpClient;
-
-  return [
-    {
-      name: "register_manual",
-      title: "Register a UTCP Manual",
-      description: "Register a UTCP manual call template with the current UTCP client.",
-      inputSchema: {
-        manual_call_template: CallTemplateSchema.describe(
-          "The UTCP manual call template to register. Optional exclude_tools / include_tools / default_disabled fields control which of this manual's tools are exposed."
-        )
-      },
-      handler: async (input) => {
-        try {
-          const client = await getClient();
-          const sanitizedTemplate = applyManualExclusion(
-            exclusionRegistry,
-            input.manual_call_template as Record<string, unknown>
-          );
-          const result = await client.registerManual(sanitizedTemplate as any);
-          return textResponse({ success: true, result });
-        } catch (error) {
-          return errorResponse(error instanceof Error ? error.message : String(error));
-        }
-      }
-    },
-    {
-      name: "deregister_manual",
-      title: "Deregister a UTCP Manual",
-      description: "Remove a registered UTCP manual from the current UTCP client.",
-      inputSchema: {
-        manual_name: z.string().describe("The UTCP manual name to deregister.")
-      },
-      handler: async (input) => {
-        try {
-          const client = await getClient();
-          const success = await client.deregisterManual(input.manual_name);
-          if (success) {
-            // applyManualExclusion registers the rule under BOTH the raw manual
-            // name and its sanitized identifier (e.g. "proxyman-mcp" AND
-            // "proxyman_mcp") — clear both so no stale rule survives under the
-            // sanitized alias.
-            exclusionRegistry.delete(input.manual_name);
-            exclusionRegistry.delete(sanitizeIdentifier(input.manual_name));
-          }
-          return textResponse({
-            success,
-            manual_name: input.manual_name,
-            message: success
-              ? `Manual '${input.manual_name}' deregistered.`
-              : `Manual '${input.manual_name}' not found.`
-          });
-        } catch (error) {
-          return errorResponse(error instanceof Error ? error.message : String(error));
-        }
-      }
-    },
-    {
-      name: "search_tools",
-      annotations: READ_ONLY_ANNOTATIONS,
-      title: "Search UTCP Tools",
-      description: "Search registered UTCP tools and return access names plus full TypeScript interfaces.",
-      inputSchema: {
-        task_description: z.string().describe("Natural-language description of the task or tool you need."),
-        limit: z.number().int().positive().max(50).optional().default(10)
-      },
-      handler: async (input) => {
-        try {
-          const client = await getClient();
-          const tools = await client.searchTools(input.task_description, input.limit);
-          return textResponse({
-            tools: tools.map((tool) => serializeToolInfo(client, tool))
-          });
-        } catch (error) {
-          return errorResponse(error instanceof Error ? error.message : String(error));
-        }
-      }
-    },
-    {
-      name: "list_tools",
-      annotations: READ_ONLY_ANNOTATIONS,
-      title: "List Registered UTCP Tools",
-      description: "List registered UTCP tools with compact, paginated names by default.",
-      inputSchema: {
-        limit: z
-          .number()
-          .int()
-          .positive()
-          .max(MAX_LIST_TOOLS_LIMIT)
-          .optional()
-          .describe(`Maximum number of tools to return. Defaults to ${DEFAULT_LIST_TOOLS_LIMIT}.`),
-        offset: z
-          .number()
-          .int()
-          .nonnegative()
-          .optional()
-          .describe("Zero-based offset for pagination."),
-        include_metadata: z
-          .boolean()
-          .optional()
-          .describe("Include descriptions and tags for the returned page. Defaults to false.")
-      },
-      handler: async (input) => {
-        try {
-          const client = await getClient();
-          const tools = await client.getTools();
-          const { limit, offset } = normalizeListToolsPagination(input);
-          const page = tools.slice(offset, offset + limit);
-          const nextOffset = offset + page.length < tools.length ? offset + page.length : undefined;
-
-          return textResponse({
-            total: tools.length,
-            count: page.length,
-            offset,
-            limit,
-            next_offset: nextOffset,
-            tools: page.map((tool) => serializeToolListItem(tool, input?.include_metadata === true))
-          });
-        } catch (error) {
-          return errorResponse(error instanceof Error ? error.message : String(error));
-        }
-      }
-    },
-    {
-      name: "tools_info",
-      annotations: READ_ONLY_ANNOTATIONS,
-      title: "Inspect UTCP Tool Interfaces",
-      description: "Return full UTCP tool interface details for a set of tool names or access names.",
-      inputSchema: {
-        tool_names: z.array(z.string()).min(1).describe("UTCP names or sandbox access names to inspect.")
-      },
-      handler: async (input) => {
-        try {
-          const client = await getClient();
-          const tools: SerializedToolInfo[] = [];
-          const missing_tools: string[] = [];
-
-          for (const name of input.tool_names) {
-            const found = await findToolByName(client, name);
-            if (found) {
-              tools.push(serializeToolInfo(client, found.tool));
-            } else {
-              missing_tools.push(name);
-            }
-          }
-
-          if (tools.length === 0) {
-            return errorResponse(`Tools not found: ${missing_tools.join(", ")}`);
-          }
-
-          return textResponse({
-            tools,
-            missing_tools
-          });
-        } catch (error) {
-          return errorResponse(error instanceof Error ? error.message : String(error));
-        }
-      }
-    },
-    {
-      name: "get_required_variables_for_tool",
-      annotations: READ_ONLY_ANNOTATIONS,
-      title: "Get Required Variables for a UTCP Tool",
-      description: "Return the required environment variables for a registered UTCP tool.",
-      inputSchema: {
-        tool_name: z.string().describe("UTCP name or sandbox access name for the tool.")
-      },
-      handler: async (input) => {
-        try {
-          const client = await getClient();
-          const found = await findToolByName(client, input.tool_name);
-          if (!found) {
-            return errorResponse(`Tool '${input.tool_name}' not found`);
-          }
-
-          const requiredVariables = await client.getRequiredVariablesForRegisteredTool(found.utcpName);
-          return textResponse({
-            tool_name: input.tool_name,
-            utcp_name: found.utcpName,
-            access_name: serializeToolSummary(found.tool).access_name,
-            required_variables: requiredVariables
-          });
-        } catch (error) {
-          return errorResponse(error instanceof Error ? error.message : String(error));
-        }
-      }
-    },
-    {
-      name: "call_tool_chain",
-      title: "Execute TypeScript with UTCP Tools",
-      description: "Execute TypeScript (async/await supported) with UTCP tool access and return the library result shape { result, logs }.",
-      inputSchema: {
-        code: z.string().describe("TypeScript code to execute. Runs as an async function body — return the final value. Call tools as manual.tool(args); await is optional (await manual.tool(args) also works)."),
-        timeout: z.number().int().positive().optional().default(30_000).describe("Execution timeout in milliseconds."),
-        memory_limit: z.number().int().positive().optional().default(128).describe("Sandbox memory limit in MB."),
-        max_output_size: z.number().int().positive().optional().default(200_000).describe("Maximum size of the final text payload in characters.")
-      },
-      handler: async (input) => {
-        try {
-          const client = await getClient();
-          const timeout = input.timeout ?? 30_000;
-          const memoryLimit = input.memory_limit ?? 128;
-          const maxOutputSize = input.max_output_size ?? 200_000;
-          const { result, logs } = await client.callToolChain(input.code, timeout, memoryLimit);
-          return buildCallToolChainResponse(result, logs, maxOutputSize);
-        } catch (error) {
-          return errorResponse(error instanceof Error ? error.message : String(error));
-        }
-      }
-    }
-  ];
-}
-
-function cloneDefinitionWithName(definition: ToolDefinition, name: string): ToolDefinition {
-  return { ...definition, name };
-}
-
-function indexToolDefinitions(definitions: ToolDefinition[]): Map<string, ToolDefinition> {
-  return new Map(definitions.map((definition) => [definition.name, definition]));
-}
-
-function requireToolDefinition(
-  definitions: Map<string, ToolDefinition>,
-  name: string
-): ToolDefinition {
-  const definition = definitions.get(name);
-  if (!definition) {
-    throw new Error(`Missing internal tool definition '${name}'`);
-  }
-  return definition;
-}
-
-function withBridgeExtensionClient(options: ToolRuntimeOptions): ToolRuntimeOptions {
-  return {
-    ...options,
-    getClient:
-      options.getExtensionClient ?? options.getClient ?? initializeBridgeExtensionClient
-  };
-}
-
-function getLocalBridgeToolDefinitions(options: ToolRuntimeOptions): {
-  compatibility: ToolDefinition[];
-  extensions: ToolDefinition[];
-} {
-  const legacy = indexToolDefinitions(
-    getLegacyToolDefinitions(withBridgeExtensionClient(options))
-  );
-  const extensionNames = [
-    ["register_manual", "bridge_v1_register_manual"],
-    ["search_tools", "bridge_v1_search_tools"],
-    ["list_tools", "bridge_v1_list_tools"],
-    ["tools_info", "bridge_v1_tools_info"],
-    ["call_tool_chain", "bridge_v1_call_tool_chain"]
-  ] as const;
-
-  return {
-    compatibility: [requireToolDefinition(legacy, "get_required_variables_for_tool")],
-    extensions: extensionNames.map(([legacyName, extensionName]) =>
-      cloneDefinitionWithName(requireToolDefinition(legacy, legacyName), extensionName)
-    )
-  };
-}
-
 export function getCanonicalToolDefinitions(
   options: ToolRuntimeOptions = {}
 ): ToolDefinition[] {
-  const byName = indexToolDefinitions(getLegacyToolDefinitions(options));
-  const requiredVariables = requireToolDefinition(byName, "get_required_variables_for_tool");
-  const getClient = options.getClient ?? initializeUtcpClient;
+  // The canonical seven serve the exclusion-aware client by default: exclusion
+  // filtering, clean access-name aliases, and the sandbox tool set all apply on
+  // the upstream wire (schemas and envelopes stay snapshot-identical to 1.2.1).
+  const getClient = options.getClient ?? initializeExclusionAwareClient;
   const canonicalRegisterManual: ToolDefinition = {
-    ...requireToolDefinition(byName, "register_manual"),
+    name: "register_manual",
     title: "Register a UTCP Manual",
     description: "Registers a new tool provider by providing its call template.",
     inputSchema: {
@@ -961,7 +600,14 @@ export function getCanonicalToolDefinitions(
     handler: async (input) => {
       try {
         const client = await getClient();
-        const result = await client.registerManual(input.manual_call_template as any);
+        // Optional exclude_tools / include_tools / default_disabled fields are
+        // recorded in the exclusion registry and stripped before the template
+        // reaches the SDK.
+        const sanitizedTemplate = applyManualExclusion(
+          exclusionRegistry,
+          input.manual_call_template as Record<string, unknown>
+        );
+        const result = await client.registerManual(sanitizedTemplate as any);
         return {
           content: [{ type: "text", text: JSON.stringify(result) }]
         };
@@ -981,7 +627,7 @@ export function getCanonicalToolDefinitions(
     }
   };
   const canonicalDeregisterManual: ToolDefinition = {
-    ...requireToolDefinition(byName, "deregister_manual"),
+    name: "deregister_manual",
     title: "Deregister a UTCP Manual",
     description: "Deregisters a tool provider from the UTCP client.",
     inputSchema: {
@@ -992,6 +638,10 @@ export function getCanonicalToolDefinitions(
         const client = await getClient();
         const success = await client.deregisterManual(input.manual_name);
         if (success) {
+          // applyManualExclusion registers the rule under BOTH the raw manual
+          // name and its sanitized identifier (e.g. "proxyman-mcp" AND
+          // "proxyman_mcp") — clear both so no stale rule survives under the
+          // sanitized alias.
           exclusionRegistry.delete(input.manual_name);
           exclusionRegistry.delete(sanitizeIdentifier(input.manual_name));
         }
@@ -1017,7 +667,8 @@ export function getCanonicalToolDefinitions(
     }
   };
   const canonicalSearchTools: ToolDefinition = {
-    ...requireToolDefinition(byName, "search_tools"),
+    name: "search_tools",
+    annotations: READ_ONLY_ANNOTATIONS,
     title: "Search for UTCP Tools",
     description: "Searches for relevant tools based on a task description.",
     inputSchema: {
@@ -1058,7 +709,8 @@ export function getCanonicalToolDefinitions(
     }
   };
   const canonicalListTools: ToolDefinition = {
-    ...requireToolDefinition(byName, "list_tools"),
+    name: "list_tools",
+    annotations: READ_ONLY_ANNOTATIONS,
     title: "List All Registered UTCP Tools",
     description: "Returns a list of all tool names currently registered.",
     inputSchema: {},
@@ -1090,8 +742,8 @@ export function getCanonicalToolDefinitions(
     }
   };
   const canonicalRequiredKeys: ToolDefinition = {
-    ...requiredVariables,
     name: "get_required_keys_for_tool",
+    annotations: READ_ONLY_ANNOTATIONS,
     title: "Get Required Variables for Tool",
     description: "Get required environment variables for a registered tool.",
     inputSchema: {
@@ -1137,7 +789,8 @@ export function getCanonicalToolDefinitions(
     }
   };
   const canonicalToolsInfo: ToolDefinition = {
-    ...requireToolDefinition(byName, "tools_info"),
+    name: "tools_info",
+    annotations: READ_ONLY_ANNOTATIONS,
     title: "Get Tools Information with TypeScript Interface",
     description:
       "Get complete information about a specified list of tools, including TypeScript interface definition.",
@@ -1180,7 +833,7 @@ export function getCanonicalToolDefinitions(
     }
   };
   const canonicalCallToolChain: ToolDefinition = {
-    ...requireToolDefinition(byName, "call_tool_chain"),
+    name: "call_tool_chain",
     title: "Execute TypeScript Code with Tool Access",
     description:
       "Execute TypeScript code with direct access to all registered tools as hierarchical functions (e.g., manual.tool()).",
@@ -1233,21 +886,45 @@ export function getCanonicalToolDefinitions(
 export function getCompatibilityToolDefinitions(
   options: ToolRuntimeOptions = {}
 ): ToolDefinition[] {
-  return getLocalBridgeToolDefinitions(options).compatibility;
-}
+  const getClient = options.getClient ?? initializeExclusionAwareClient;
 
-export function getBridgeExtensionDefinitions(
-  options: ToolRuntimeOptions = {}
-): ToolDefinition[] {
-  return getLocalBridgeToolDefinitions(options).extensions;
+  return [
+    {
+      name: "get_required_variables_for_tool",
+      annotations: READ_ONLY_ANNOTATIONS,
+      title: "Get Required Variables for a UTCP Tool",
+      description:
+        "Deprecated compatibility alias for get_required_keys_for_tool. Return the required environment variables for a registered UTCP tool.",
+      inputSchema: {
+        tool_name: z.string().describe("UTCP name or sandbox access name for the tool.")
+      },
+      handler: async (input) => {
+        try {
+          const client = await getClient();
+          const found = await findToolByName(client, input.tool_name);
+          if (!found) {
+            return errorResponse(`Tool '${input.tool_name}' not found`);
+          }
+
+          const requiredVariables = await client.getRequiredVariablesForRegisteredTool(found.utcpName);
+          return textResponse({
+            tool_name: input.tool_name,
+            utcp_name: found.utcpName,
+            access_name: serializeToolSummary(found.tool).access_name,
+            required_variables: requiredVariables
+          });
+        } catch (error) {
+          return errorResponse(error instanceof Error ? error.message : String(error));
+        }
+      }
+    }
+  ];
 }
 
 export function getToolDefinitions(options: ToolRuntimeOptions = {}): ToolDefinition[] {
-  const localBridge = getLocalBridgeToolDefinitions(options);
   return [
     ...getCanonicalToolDefinitions(options),
-    ...localBridge.compatibility,
-    ...localBridge.extensions
+    ...getCompatibilityToolDefinitions(options)
   ];
 }
 
@@ -1294,7 +971,7 @@ export function createMcpServer(options: ToolRuntimeOptions = {}): McpServer {
   const server = new McpServer({
     name: "@itsbrex/code-mode-mcp",
     // Keep in sync with package.json "version".
-    version: "1.2.1"
+    version: "1.3.0"
   });
 
   registerMcpTools(server, options);
@@ -1377,17 +1054,17 @@ async function initializeUtcpClient(): Promise<CodeModeUtcpClient> {
   exclusionRegistry = registry;
   const clientConfig = new UtcpClientConfigSerializer().validateDict(sanitizedConfig) as UtcpClientConfig;
   utcpClient = await CodeModeUtcpClient.create(scriptDir, clientConfig);
-  bridgeExtensionClient = createCleanToolNameClient(utcpClient, exclusionRegistry);
+  exclusionAwareClient = createCleanToolNameClient(utcpClient, exclusionRegistry);
   return utcpClient;
 }
 
-async function initializeBridgeExtensionClient(): Promise<CodeModeMcpClientLike> {
-  if (bridgeExtensionClient) {
-    return bridgeExtensionClient;
+async function initializeExclusionAwareClient(): Promise<CodeModeMcpClientLike> {
+  if (exclusionAwareClient) {
+    return exclusionAwareClient;
   }
   const client = await initializeUtcpClient();
-  bridgeExtensionClient = createCleanToolNameClient(client, exclusionRegistry);
-  return bridgeExtensionClient;
+  exclusionAwareClient = createCleanToolNameClient(client, exclusionRegistry);
+  return exclusionAwareClient;
 }
 
 export async function startServer(options: ToolRuntimeOptions = {}): Promise<void> {

@@ -39,7 +39,7 @@ test("packed server seam completes real stdio handshake with canonical wire", as
   await client.connect(transport);
   assert.deepEqual(client.getServerVersion(), {
     name: "@itsbrex/code-mode-mcp",
-    version: "1.2.1"
+    version: "1.3.0"
   });
   const listed = await client.listTools();
   assert.deepEqual(
@@ -52,12 +52,7 @@ test("packed server seam completes real stdio handshake with canonical wire", as
       "get_required_keys_for_tool",
       "tools_info",
       "call_tool_chain",
-      "get_required_variables_for_tool",
-      "bridge_v1_register_manual",
-      "bridge_v1_search_tools",
-      "bridge_v1_list_tools",
-      "bridge_v1_tools_info",
-      "bridge_v1_call_tool_chain"
+      "get_required_variables_for_tool"
     ]
   );
   const canonicalSnapshot = JSON.parse(

@@ -217,13 +217,13 @@ test("wrapper with no registry leaves all tools visible (back-compat)", async ()
   assert.equal(visible.length, 2);
 });
 
-import { getBridgeExtensionDefinitions, getToolDefinitions } from "../dist/index.js";
+import { getCanonicalToolDefinitions, getToolDefinitions } from "../dist/index.js";
 
 function parseText(result) {
   return JSON.parse(result.content[0].text);
 }
 
-test("bridge_v1_register_manual strips exclusion keys before delegating to the SDK", async () => {
+test("canonical register_manual strips exclusion keys before delegating to the SDK", async () => {
   const received = [];
   const baseClient = {
     async callTool() { return {}; },
@@ -239,8 +239,8 @@ test("bridge_v1_register_manual strips exclusion keys before delegating to the S
     toolToTypeScriptInterface(tool) { return `// ${tool.name}`; }
   };
   const client = createCleanToolNameClient(baseClient);
-  const definitions = getBridgeExtensionDefinitions({ getClient: async () => client });
-  const registerManual = definitions.find((d) => d.name === "bridge_v1_register_manual");
+  const definitions = getCanonicalToolDefinitions({ getClient: async () => client });
+  const registerManual = definitions.find((d) => d.name === "register_manual");
 
   const payload = parseText(
     await registerManual.handler({
@@ -253,10 +253,49 @@ test("bridge_v1_register_manual strips exclusion keys before delegating to the S
     })
   );
 
-  assert.equal(payload.success, true);
+  assert.deepEqual(payload, { registered: true });
   assert.equal(received.length, 1);
   assert.equal("exclude_tools" in received[0], false, "SDK must not receive custom keys");
   assert.equal(received[0].name, "demo");
+});
+
+test("canonical list_tools and search_tools hide excluded tools", async () => {
+  const registry = new Map([
+    ["proxyman_mcp", { defaultDisabled: false, exclude: ["get_flows"], include: [] }]
+  ]);
+  const client = createCleanToolNameClient(makeBaseClient(exclusionTools, []), registry);
+  const definitions = getCanonicalToolDefinitions({ getClient: async () => client });
+  const listTools = definitions.find((d) => d.name === "list_tools");
+  const searchTools = definitions.find((d) => d.name === "search_tools");
+
+  const listPayload = parseText(await listTools.handler({}));
+  assert.deepEqual(listPayload.tools, ["proxyman_mcp.get_version"]);
+
+  const searchPayload = parseText(
+    await searchTools.handler({ task_description: "anything", limit: 10 })
+  );
+  assert.deepEqual(
+    searchPayload.tools.map((tool) => tool.name),
+    ["proxyman_mcp.get_version"]
+  );
+});
+
+test("canonical lookup tools treat excluded tools as unknown", async () => {
+  const registry = new Map([
+    ["proxyman_mcp", { defaultDisabled: false, exclude: ["get_flows"], include: [] }]
+  ]);
+  const client = createCleanToolNameClient(makeBaseClient(exclusionTools, []), registry);
+  const definitions = getCanonicalToolDefinitions({ getClient: async () => client });
+  const requiredKeys = definitions.find((d) => d.name === "get_required_keys_for_tool");
+  const toolsInfo = definitions.find((d) => d.name === "tools_info");
+
+  const keysResponse = await requiredKeys.handler({ tool_name: "proxyman_mcp.get_flows" });
+  assert.equal(keysResponse.isError, true);
+  assert.match(keysResponse.content[0].text, /not found/);
+
+  const infoResponse = await toolsInfo.handler({ tool_names: ["proxyman_mcp.get_flows"] });
+  assert.equal(infoResponse.isError, true);
+  assert.match(infoResponse.content[0].text, /not found/);
 });
 
 import { z as zod } from "zod";
