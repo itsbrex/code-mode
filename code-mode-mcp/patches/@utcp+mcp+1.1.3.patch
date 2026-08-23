@@ -1,17 +1,69 @@
 diff --git a/node_modules/@utcp/mcp/dist/index.cjs b/node_modules/@utcp/mcp/dist/index.cjs
-index c4d8381..deca4e7 100644
 --- a/node_modules/@utcp/mcp/dist/index.cjs
 +++ b/node_modules/@utcp/mcp/dist/index.cjs
-@@ -4228,7 +4228,7 @@ var McpCommunicationProtocol = class {
-       if (!schemaStr.includes("$defs") && !schemaStr.includes("$ref")) {
-         return schema;
+@@ -4223,17 +4223,56 @@ var McpCommunicationProtocol = class {
+     if (!schema || typeof schema !== "object") {
+       return schema;
+     }
++    let resolved = schema;
+     try {
+       const schemaStr = JSON.stringify(schema);
+-      if (!schemaStr.includes("$defs") && !schemaStr.includes("$ref")) {
+-        return schema;
++      if (schemaStr.includes("$defs") || schemaStr.includes("$ref")) {
++        resolved = await $RefParser.dereference(schema, { dereference: { circular: "ignore" } });
        }
 -      const dereferenced = await import_json_schema_ref_parser.default.dereference(schema);
-+      const dereferenced = await import_json_schema_ref_parser.default.dereference(schema, { dereference: { circular: "ignore" } });
-       return dereferenced;
+-      return dereferenced;
      } catch (error) {
        this._logError(`Failed to dereference schema, using original:`, error.message);
-@@ -4267,7 +4267,8 @@ var McpCommunicationProtocol = class {
+-      return schema;
++      resolved = schema;
+     }
++    try {
++      return this._normalizeBooleanSchemas(resolved, /* @__PURE__ */ new WeakSet());
++    } catch (error) {
++      this._logError(`Failed to normalize schema, using resolved:`, error.message);
++      return resolved;
++    }
++  }
++  // JSON Schema permits bare `true`/`false` as a schema, but the SDK's Zod
++  // UtcpManual validation only accepts object schemas — one boolean sub-schema
++  // rejects the whole manual (seen live: the-swarm). Rewrite booleans found in
++  // schema positions to their object equivalents; leave keyword booleans
++  // (uniqueItems, deprecated, ...) untouched.
++  _normalizeBooleanSchemas(node, seen) {
++    const toSchema = (v) => v === true ? {} : v === false ? { not: {} } : this._normalizeBooleanSchemas(v, seen);
++    if (Array.isArray(node)) {
++      return node.map((v) => this._normalizeBooleanSchemas(v, seen));
++    }
++    if (!node || typeof node !== "object") {
++      return node;
++    }
++    if (seen.has(node)) {
++      return node;
++    }
++    seen.add(node);
++    const SCHEMA_MAPS = ["properties", "patternProperties", "definitions", "$defs", "dependentSchemas"];
++    const SCHEMA_VALUES = ["items", "additionalItems", "additionalProperties", "unevaluatedProperties", "unevaluatedItems", "not", "if", "then", "else", "contains", "propertyNames"];
++    const SCHEMA_LISTS = ["allOf", "anyOf", "oneOf", "prefixItems"];
++    const out = {};
++    for (const [k, v] of Object.entries(node)) {
++      if (SCHEMA_MAPS.includes(k) && v && typeof v === "object" && !Array.isArray(v)) {
++        out[k] = Object.fromEntries(Object.entries(v).map(([pk, pv]) => [pk, toSchema(pv)]));
++      } else if (SCHEMA_VALUES.includes(k)) {
++        out[k] = Array.isArray(v) ? v.map(toSchema) : toSchema(v);
++      } else if (SCHEMA_LISTS.includes(k) && Array.isArray(v)) {
++        out[k] = v.map(toSchema);
++      } else {
++        out[k] = this._normalizeBooleanSchemas(v, seen);
++      }
++    }
++    return out;
+   }
+   async _cleanupSession(sessionKey) {
+     const session = this._mcpSessions.get(sessionKey);
+@@ -4267,7 +4306,8 @@ var McpCommunicationProtocol = class {
          command: stdioConfig.command,
          args: stdioConfig.args || [],
          cwd: stdioConfig.cwd,
@@ -21,7 +73,7 @@ index c4d8381..deca4e7 100644
        });
      } else if (serverConfig.transport === "http") {
        const httpConfig = serverConfig;
-@@ -4443,6 +4444,10 @@ var McpCommunicationProtocol = class {
+@@ -4443,6 +4483,10 @@ var McpCommunicationProtocol = class {
        if ("structured_output" in result) {
          return result.structured_output;
        }
@@ -33,19 +85,71 @@ index c4d8381..deca4e7 100644
          const processedList = result.content.map((item) => {
            if (item && item.type === "text" && typeof item.text === "string") {
 diff --git a/node_modules/@utcp/mcp/dist/index.js b/node_modules/@utcp/mcp/dist/index.js
-index 25c65ac..6c809d9 100644
 --- a/node_modules/@utcp/mcp/dist/index.js
 +++ b/node_modules/@utcp/mcp/dist/index.js
-@@ -4193,7 +4193,7 @@ var McpCommunicationProtocol = class {
-       if (!schemaStr.includes("$defs") && !schemaStr.includes("$ref")) {
-         return schema;
+@@ -4188,17 +4188,56 @@ var McpCommunicationProtocol = class {
+     if (!schema || typeof schema !== "object") {
+       return schema;
+     }
++    let resolved = schema;
+     try {
+       const schemaStr = JSON.stringify(schema);
+-      if (!schemaStr.includes("$defs") && !schemaStr.includes("$ref")) {
+-        return schema;
++      if (schemaStr.includes("$defs") || schemaStr.includes("$ref")) {
++        resolved = await $RefParser.dereference(schema, { dereference: { circular: "ignore" } });
        }
 -      const dereferenced = await $RefParser.dereference(schema);
-+      const dereferenced = await $RefParser.dereference(schema, { dereference: { circular: "ignore" } });
-       return dereferenced;
+-      return dereferenced;
      } catch (error) {
        this._logError(`Failed to dereference schema, using original:`, error.message);
-@@ -4232,7 +4232,8 @@ var McpCommunicationProtocol = class {
+-      return schema;
++      resolved = schema;
+     }
++    try {
++      return this._normalizeBooleanSchemas(resolved, /* @__PURE__ */ new WeakSet());
++    } catch (error) {
++      this._logError(`Failed to normalize schema, using resolved:`, error.message);
++      return resolved;
++    }
++  }
++  // JSON Schema permits bare `true`/`false` as a schema, but the SDK's Zod
++  // UtcpManual validation only accepts object schemas — one boolean sub-schema
++  // rejects the whole manual (seen live: the-swarm). Rewrite booleans found in
++  // schema positions to their object equivalents; leave keyword booleans
++  // (uniqueItems, deprecated, ...) untouched.
++  _normalizeBooleanSchemas(node, seen) {
++    const toSchema = (v) => v === true ? {} : v === false ? { not: {} } : this._normalizeBooleanSchemas(v, seen);
++    if (Array.isArray(node)) {
++      return node.map((v) => this._normalizeBooleanSchemas(v, seen));
++    }
++    if (!node || typeof node !== "object") {
++      return node;
++    }
++    if (seen.has(node)) {
++      return node;
++    }
++    seen.add(node);
++    const SCHEMA_MAPS = ["properties", "patternProperties", "definitions", "$defs", "dependentSchemas"];
++    const SCHEMA_VALUES = ["items", "additionalItems", "additionalProperties", "unevaluatedProperties", "unevaluatedItems", "not", "if", "then", "else", "contains", "propertyNames"];
++    const SCHEMA_LISTS = ["allOf", "anyOf", "oneOf", "prefixItems"];
++    const out = {};
++    for (const [k, v] of Object.entries(node)) {
++      if (SCHEMA_MAPS.includes(k) && v && typeof v === "object" && !Array.isArray(v)) {
++        out[k] = Object.fromEntries(Object.entries(v).map(([pk, pv]) => [pk, toSchema(pv)]));
++      } else if (SCHEMA_VALUES.includes(k)) {
++        out[k] = Array.isArray(v) ? v.map(toSchema) : toSchema(v);
++      } else if (SCHEMA_LISTS.includes(k) && Array.isArray(v)) {
++        out[k] = v.map(toSchema);
++      } else {
++        out[k] = this._normalizeBooleanSchemas(v, seen);
++      }
++    }
++    return out;
+   }
+   async _cleanupSession(sessionKey) {
+     const session = this._mcpSessions.get(sessionKey);
+@@ -4232,7 +4271,8 @@ var McpCommunicationProtocol = class {
          command: stdioConfig.command,
          args: stdioConfig.args || [],
          cwd: stdioConfig.cwd,
@@ -55,7 +159,7 @@ index 25c65ac..6c809d9 100644
        });
      } else if (serverConfig.transport === "http") {
        const httpConfig = serverConfig;
-@@ -4408,6 +4409,10 @@ var McpCommunicationProtocol = class {
+@@ -4408,6 +4448,10 @@ var McpCommunicationProtocol = class {
        if ("structured_output" in result) {
          return result.structured_output;
        }

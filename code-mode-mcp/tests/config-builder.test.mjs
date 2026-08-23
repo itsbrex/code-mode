@@ -17,12 +17,20 @@ test("parseCliConfigArg reads positional, --config, --config=, and -c forms", ()
 
 test("resolveConfigPath: explicit arg wins over environment and resolves absolute", () => {
   const prev = process.env.UTCP_CONFIG_PATH;
+  const prevFile = process.env.UTCP_CONFIG_FILE;
   process.env.UTCP_CONFIG_PATH = "/abs/from-env.json";
+  // Pin the canonical var too so the ambient shell env (which may point both
+  // vars at different files and trip the fail-closed conflict guard) can't
+  // leak into this test. Divergent-path behavior is covered in
+  // config-path.test.mjs; here both vars agree and explicit still wins.
+  process.env.UTCP_CONFIG_FILE = "/abs/from-env.json";
   try {
     assert.equal(resolveConfigPath("/abs/explicit.json"), path.resolve("/abs/explicit.json"));
   } finally {
     if (prev === undefined) delete process.env.UTCP_CONFIG_PATH;
     else process.env.UTCP_CONFIG_PATH = prev;
+    if (prevFile === undefined) delete process.env.UTCP_CONFIG_FILE;
+    else process.env.UTCP_CONFIG_FILE = prevFile;
   }
 });
 

@@ -32,3 +32,5 @@ debt/
 /FIX_ME.md
 2026-05-18-205723-use-msgcli-mcp-instead-if-this-doesnt-work.txt
 2026-08-18-075512-unfreeze-all-the-apps-that-have-been-paused-or-fr.txt
+/apps/
+/.appkit/
