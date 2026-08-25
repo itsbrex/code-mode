@@ -13,7 +13,7 @@ const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
 const esc = (s) =>
-  String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
 /* ----------------------------------------------------------------- State -- */
 
@@ -102,11 +102,11 @@ async function boot() {
 }
 
 function signature() {
+  // Keyed by config PATH + shape: two different config files with identical
+  // manuals must not share (and silently bleed) a persisted session.
   return (
-    "v1:" +
-    manifest.manuals
-      .map((m) => `${m.name}#${m.tools.length}`)
-      .join("|")
+    "v2:" +
+    (String(manifest.source || "") + "|" + manifest.manuals.map((m) => `${m.name}#${m.tools.length}`).join("|"))
       .split("")
       .reduce((h, c) => ((h << 5) - h + c.charCodeAt(0)) | 0, 0)
   );
@@ -261,7 +261,12 @@ function bulkSetHidden(hidden) {
 }
 
 function selectAllMatches() {
-  for (const { tools } of computeView()) for (const t of tools) ui.selected.add(t.name);
+  // Skip removed manuals — their rows are display:none, so selecting them
+  // would silently include invisible tools in bulk Expose/Hide.
+  for (const { manual, tools } of computeView()) {
+    if (decisions.get(manual.name)?.removed) continue;
+    for (const t of tools) ui.selected.add(t.name);
+  }
   render();
 }
 
@@ -401,7 +406,8 @@ function updateStatus(view) {
 
 function patchManual(mn) {
   const section = $(`.manual[data-manual="${cssEscape(mn)}"]`);
-  if (section) $(".manual__counts", section).innerHTML = manualCountsHtml(manualByName.get(mn));
+  const counts = section && $(".manual__counts", section); // absent when the manual is removed
+  if (counts) counts.innerHTML = manualCountsHtml(manualByName.get(mn));
 }
 
 /* ----------------------------------------------------------------- Mutate -- */
@@ -419,7 +425,12 @@ function toggleTool(mn, tn) {
     const state = toolState(mn, tn);
     row.dataset.state = state;
     const label = state === "exposed" ? "Exposed" : "Hidden";
-    $(".state-toggle", row).innerHTML = `<span class="dot"></span><svg class="ico"><use href="#${state === "exposed" ? "i-eye" : "i-eye-off"}"/></svg>${label}`;
+    const btn = $(".state-toggle", row);
+    btn.innerHTML = `<span class="dot"></span><svg class="ico"><use href="#${state === "exposed" ? "i-eye" : "i-eye-off"}"/></svg>${label}`;
+    // Keep tooltip + accessible name in sync with the new state.
+    btn.title = `Click to ${state === "exposed" ? "hide" : "expose"} this tool`;
+    const short = toolIndex.get(tn)?.tool.shortName ?? tn;
+    btn.setAttribute("aria-label", `Toggle visibility for ${short}, currently ${label}`);
   }
   patchManual(mn);
   if (ui.filters.decision !== "all" || ui.sortField === "state") render();
@@ -492,10 +503,14 @@ function syntaxHighlight(json) {
 }
 
 function updatePreview() {
-  $("#jsonOut").innerHTML = syntaxHighlight(JSON.stringify(buildConfig(), null, 2));
+  const cfg = buildConfig();
+  $("#jsonOut").innerHTML = syntaxHighlight(JSON.stringify(cfg, null, 2));
   const { hidden, dd, removed } = tallyDecisions();
+  // Count what actually serializes (discovered-only manuals have no template
+  // and are never emitted), not the on-screen manual count.
+  const emitted = Array.isArray(cfg.manual_call_templates) ? cfg.manual_call_templates.length : 0;
   $("#previewMeta").textContent =
-    `${manifest.manualCount - removed} manuals · ${hidden} hidden · ${dd} default_disabled` + (removed ? ` · ${removed} removed` : "");
+    `${emitted} manuals · ${hidden} hidden · ${dd} default_disabled` + (removed ? ` · ${removed} removed` : "");
 }
 
 /* Smooth-scroll the JSON preview to a manual's config block + briefly flash it.
@@ -505,9 +520,11 @@ function scrollPreviewToManual(name) {
   const scroller = out?.closest(".preview__code");
   if (!scroller) return;
 
-  // On narrow layouts the preview is an off-canvas drawer — make sure it's open.
-  // On wide layouts it's a persistent sticky column and this class is a no-op.
-  if (!document.body.classList.contains("preview-open")) {
+  // On narrow layouts the preview is an off-canvas drawer — make sure it's
+  // open. On wide layouts the column is already visible; do NOT set the class
+  // there, or the drawer pops open unrequested when the window later narrows.
+  const narrow = window.matchMedia("(max-width: 1079px)").matches;
+  if (narrow && !document.body.classList.contains("preview-open")) {
     document.body.classList.add("preview-open");
     $("#previewToggle")?.setAttribute("aria-expanded", "true");
   }
@@ -566,16 +583,23 @@ async function copyJson() {
   }
 }
 
-async function saveToDisk() {
+async function saveToDisk(overwrite = false) {
   try {
     const res = await fetch("/api/save", {
       method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ filename: safeFilename(), config: buildConfig() })
+      headers: { "content-type": "application/json", "x-config-builder-token": manifest.token || "" },
+      body: JSON.stringify({ filename: safeFilename(), config: buildConfig(), overwrite: overwrite === true })
     });
     const data = await res.json();
-    if (res.ok && data.ok) toast(`Saved to ${data.path}`, "pos");
-    else toast(data.error || "Save failed", "neg");
+    if (res.ok && data.ok) {
+      toast(`Saved to ${data.path}`, "pos");
+    } else if (res.status === 409 && data.exists) {
+      if (window.confirm(`${safeFilename()} already exists in ./configs/ — overwrite it?`)) {
+        await saveToDisk(true);
+      }
+    } else {
+      toast(data.error || "Save failed", "neg");
+    }
   } catch {
     toast("Save needs the local server (npm run config-builder)", "neg");
   }
@@ -813,7 +837,7 @@ function wireEvents() {
 
   $("#downloadBtn").addEventListener("click", download);
   $("#copyBtn").addEventListener("click", copyJson);
-  $("#saveBtn").addEventListener("click", saveToDisk);
+  $("#saveBtn").addEventListener("click", () => saveToDisk());
   $("#resetBtn").addEventListener("click", () => {
     resetDecisions();
     render();
@@ -837,6 +861,9 @@ function wireEvents() {
   $("#bulkClear").addEventListener("click", clearSelection);
 
   document.addEventListener("keydown", (e) => {
+    // The Host Import panel owns the keyboard while it's open (its own Escape
+    // handler closes it) — don't also clear search/selection underneath it.
+    if (document.body.classList.contains("view-host")) return;
     const inField = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName || "");
     if (e.key === "/" && !inField) {
       e.preventDefault();

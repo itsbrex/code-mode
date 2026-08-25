@@ -1228,6 +1228,7 @@ body.is-resizing {
 /* ----------------------------------------------------- Host Import panel */
 body.view-host .toolbar,
 body.view-host .layout,
+body.view-host .bulkbar,
 body.view-host [data-tools-only] { display: none !important; }
 body.view-host #hostImportToggle {
   background: var(--accent-quiet);

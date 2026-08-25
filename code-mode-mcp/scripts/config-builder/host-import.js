@@ -44,7 +44,13 @@ function shortProject(p) {
 }
 
 async function api(path, opts) {
-  const res = await fetch(path, opts);
+  // Attach the per-launch session token (from the injected manifest) so the
+  // server's CSRF guard accepts our mutating POSTs.
+  const token = (window.__MANIFEST__ && window.__MANIFEST__.token) || "";
+  const merged = opts
+    ? { ...opts, headers: { ...(opts.headers || {}), "x-config-builder-token": token } }
+    : undefined;
+  const res = await fetch(path, merged);
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
   return data;
@@ -77,6 +83,8 @@ async function load() {
   } catch (e) {
     const list = $("#hiList");
     if (list) list.innerHTML = `<p class="host-panel__empty">Failed to scan host configs: ${esc(String(e.message || e))}</p>`;
+    const summary = $("#hiSummary");
+    if (summary) summary.textContent = "scan failed — Refresh to retry";
   }
 }
 
