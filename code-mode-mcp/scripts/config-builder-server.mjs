@@ -32,6 +32,7 @@ import { fileURLToPath } from "url";
 
 import { intro, outro, note, log, spinner } from "@clack/prompts";
 
+import { ensureSecretEnv } from "./lib/secret-env.mjs";
 import { resolveConfigPath, discoverManuals } from "./lib/utcp-config.mjs";
 // Host-import core (shared with the `npm run host-import` CLI). The web panel
 // drives these to migrate host MCP servers into the UTCP config and strip them
@@ -50,6 +51,11 @@ import {
   isToolExcluded,
   utcpNameToTsInterfaceName
 } from "../index.ts";
+
+// Re-exec under `op run --env-file configs/code-mode.env` when available, so
+// discovery sees the same secrets as the live bridge (bare launches otherwise
+// fail registration for every secret-dependent manual).
+ensureSecretEnv();
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const APP_DIR = path.join(__dirname, "config-builder");
