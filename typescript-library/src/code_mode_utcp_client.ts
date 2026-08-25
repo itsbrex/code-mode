@@ -178,29 +178,75 @@ ${interfaces.join('\n\n')}`;
    * @returns Object containing both the execution result and captured console logs
    */
   public async callToolChain(
-    code: string, 
+    code: string,
     timeout: number = 30000,
     memoryLimit: number = 128
   ): Promise<{result: any, logs: string[]}> {
     const tools = await this.getTools();
     const logs: string[] = [];
-    
+
     // Create isolated VM
     const isolate = new ivm.Isolate({ memoryLimit });
     let timeoutHandle: NodeJS.Timeout | undefined;
 
+    // Settled (in `finally`) the moment this chain is over — result, error, or
+    // timeout. Every bridged tool call races against it, and that race is
+    // load-bearing for the process's health, not a nicety: the tool bridge
+    // blocks the isolate's OS thread in `applySyncPromise` until the host-side
+    // promise settles, and a tool call that never settles (a hung HTTP request,
+    // an MCP server that stopped answering) would pin that thread FOREVER.
+    // `dispose()` cannot reclaim it — termination is delivered via a V8
+    // interrupt, which only fires when JS execution resumes, and a thread
+    // parked in `applySyncPromise` never resumes on its own. Each such call
+    // used to leak one native thread with barely any memory attached: task
+    // counts climb while heap graphs stay flat, until the process hits a
+    // pid/thread limit and can no longer fork. The race guarantees every
+    // bridged call settles by end-of-chain, so the thread always unparks and
+    // the terminate interrupt can land.
+    const pendingToolCalls = new Set<string>();
+    let releaseChain!: () => void;
+    const chainDone = new Promise<never>((_, rej) => {
+      releaseChain = () => {
+        // Logged synchronously, before the rejection fans out, so the entries
+        // are in `logs` by the time the caller sees the chain's result —
+        // `Promise.race` never cancels its losers, so this set (not the race
+        // arms) is what knows which calls were genuinely still in flight.
+        for (const toolName of pendingToolCalls) {
+          logs.push(`[WARN] Tool call "${toolName}" abandoned: the chain ended before it settled`);
+        }
+        pendingToolCalls.clear();
+        rej(new Error('tool chain ended'));
+      };
+    });
+    chainDone.catch(() => {}); // settled in finally on every path; never unhandled
+    const boundedCallTool = (toolName: string, args: any): Promise<any> => {
+      pendingToolCalls.add(toolName);
+      const real = this.callTool(toolName, args).finally(() => {
+        pendingToolCalls.delete(toolName);
+      });
+      // A late settlement after the chain ended must not surface as an
+      // unhandled rejection — the race below has already moved on.
+      real.catch(() => {});
+      return Promise.race([
+        real,
+        chainDone.catch(() => {
+          throw new Error(`Tool call "${toolName}" abandoned: the chain ended before it settled`);
+        }),
+      ]);
+    };
+
     try {
       const context = await isolate.createContext();
       const jail = context.global;
-      
+
       // Set up the jail with a reference to itself
       await jail.set('global', jail.derefInto());
-      
+
       // Set up console logging bridges
       await this.setupConsoleBridge(isolate, context, jail, logs);
-      
+
       // Set up tool bridges
-      await this.setupToolBridges(isolate, context, jail, tools);
+      await this.setupToolBridges(isolate, context, jail, tools, boundedCallTool);
       
       // Set up utility functions and interfaces
       await this.setupUtilities(isolate, context, jail, tools);
@@ -258,21 +304,83 @@ ${interfaces.join('\n\n')}`;
       // of the wrapper completes (i.e. immediately, since the body is async).
       // `script.run` may itself reject if the isolate refuses to surface the
       // returned Promise; treat that as benign as long as the callback fires.
-      script.run(context, { timeout }).catch(() => {});
+      // The exception is a rejection from an isolate that is already DISPOSED —
+      // isolated-vm kills an isolate that hits its memoryLimit, so the
+      // callbacks can never fire and waiting on them would strand the chain
+      // until the generic timeout, reporting an out-of-memory as "timed out".
+      // Surface the real error instead.
+      script.run(context, { timeout }).catch((runErr) => {
+        if (isolate.isDisposed) {
+          rejectResult(runErr instanceof Error ? runErr : new Error(String(runErr)));
+        }
+      });
 
       const resultJson = await settledPromise;
       const result = JSON.parse(resultJson).__result;
       return { result, logs };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      return { 
-        result: null, 
-        logs: [...logs, `[ERROR] Code execution failed: ${errorMessage}`] 
-      };
+      // Push into the live array rather than returning a copy: `finally` runs
+      // AFTER this return value is built, and the abandoned-call warnings it
+      // writes (see `releaseChain`) must reach the caller too.
+      logs.push(`[ERROR] Code execution failed: ${errorMessage}`);
+      return { result: null, logs };
     } finally {
       if (timeoutHandle) clearTimeout(timeoutHandle);
-      isolate.dispose();
+      // Unblock any tool call still parked in `applySyncPromise` BEFORE
+      // disposing, so the isolate's thread can resume and take the terminate
+      // interrupt (see `chainDone` above).
+      releaseChain();
+      this.disposeIsolateSafely(isolate);
     }
+  }
+
+  /**
+   * Dispose an isolate without ever letting disposal failures replace the
+   * chain's result, and without trusting a single attempt.
+   *
+   * A bare `isolate.dispose()` in a `finally` has two failure modes. An
+   * isolate that blew its `memoryLimit` was already disposed by isolated-vm
+   * itself, so the second dispose throws "Isolate is already disposed" — and
+   * an exception thrown from a `finally` REPLACES the function's return
+   * value, turning an orderly out-of-memory result into an opaque rejection.
+   * And disposal of a busy isolate is delivered as a terminate request rather
+   * than being instantaneous, with upstream reports
+   * (https://github.com/laverdet/isolated-vm/issues/198) of isolates whose GC
+   * threads out-live it; those leak an OS thread each, which is invisible in
+   * memory metrics and only surfaces when the process exhausts a pid limit.
+   *
+   * So: guard on `isDisposed`, swallow (but log) a throwing dispose, and
+   * re-check on a few unref'd timers so a slow teardown gets retried and a
+   * genuinely stuck isolate is at least reported instead of silent.
+   */
+  private disposeIsolateSafely(isolate: ivm.Isolate): void {
+    const tryDispose = (): void => {
+      try {
+        if (!isolate.isDisposed) isolate.dispose();
+      } catch (err) {
+        console.warn(
+          `[code-mode] isolate dispose attempt failed: ${err instanceof Error ? err.message : String(err)}`
+        );
+      }
+    };
+    tryDispose();
+    if (isolate.isDisposed) return;
+    let attempts = 0;
+    const retry = (): void => {
+      attempts += 1;
+      tryDispose();
+      if (!isolate.isDisposed && attempts < 5) {
+        const t = setTimeout(retry, 200 * attempts);
+        t.unref?.();
+      } else if (!isolate.isDisposed) {
+        console.error(
+          '[code-mode] isolate could not be disposed after retries — its thread and heap are likely leaked'
+        );
+      }
+    };
+    const t = setTimeout(retry, 100);
+    t.unref?.();
   }
 
   /**
@@ -320,13 +428,19 @@ ${interfaces.join('\n\n')}`;
     isolate: ivm.Isolate,
     context: ivm.Context,
     jail: ivm.Reference<Record<string | number | symbol, unknown>>,
-    tools: Tool[]
+    tools: Tool[],
+    // The in-isolate stubs block their OS thread in `applySyncPromise` until
+    // this settles, so `callToolChain` passes a caller that is GUARANTEED to
+    // settle by end-of-chain (see `chainDone` there). Defaults to the raw
+    // client call for any external caller of this method.
+    callTool: (toolName: string, args: any) => Promise<any> = (toolName, args) =>
+      this.callTool(toolName, args)
   ): Promise<void> {
     // Create a reference for the tool caller in main process
     const toolCallerRef = new ivm.Reference(async (toolName: string, argsJson: string) => {
       try {
         const args = JSON.parse(argsJson);
-        const result = await this.callTool(toolName, args);
+        const result = await callTool(toolName, args);
         return JSON.stringify({ success: true, result });
       } catch (error: any) {
         let errorMsg: string = error instanceof Error ? error.message : String(error);
