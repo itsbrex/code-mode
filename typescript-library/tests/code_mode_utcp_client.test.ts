@@ -510,9 +510,17 @@ describe('CodeModeUtcpClient', () => {
       }
     `;
 
+    const started = Date.now();
     const result = await client.callToolChain(code, 5000, 8);
     expect(result.result).toBeNull();
     expect(result.logs.some((log: string) => log.includes('Code execution failed'))).toBe(true);
+    // Distinguish the OOM path from the generic timeout backstop: the
+    // disposed-isolate run rejection surfaces isolated-vm's own memory-limit
+    // error, well before the 5000ms timer could fire. Without these two
+    // assertions the test would also pass via a plain timeout, proving
+    // nothing about the memory-limit path.
+    expect(result.logs.some((log: string) => log.toLowerCase().includes('memory'))).toBe(true);
+    expect(Date.now() - started).toBeLessThan(4500);
   });
 
   test('the chain stays usable after a hung tool call and an OOM (no poisoned client state)', async () => {

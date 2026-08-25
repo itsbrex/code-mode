@@ -304,7 +304,16 @@ ${interfaces.join('\n\n')}`;
       // of the wrapper completes (i.e. immediately, since the body is async).
       // `script.run` may itself reject if the isolate refuses to surface the
       // returned Promise; treat that as benign as long as the callback fires.
-      script.run(context, { timeout }).catch(() => {});
+      // The exception is a rejection from an isolate that is already DISPOSED —
+      // isolated-vm kills an isolate that hits its memoryLimit, so the
+      // callbacks can never fire and waiting on them would strand the chain
+      // until the generic timeout, reporting an out-of-memory as "timed out".
+      // Surface the real error instead.
+      script.run(context, { timeout }).catch((runErr) => {
+        if (isolate.isDisposed) {
+          rejectResult(runErr instanceof Error ? runErr : new Error(String(runErr)));
+        }
+      });
 
       const resultJson = await settledPromise;
       const result = JSON.parse(resultJson).__result;
