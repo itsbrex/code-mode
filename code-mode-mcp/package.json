@@ -26,7 +26,8 @@
     "config-builder:no-open": "tsx scripts/config-builder-server.mjs --no-open",
     "host-import": "tsx scripts/host-import-cli.mjs",
     "dev:register": "node scripts/dev-register.mjs",
-    "dev:unregister": "node scripts/dev-unregister.mjs"
+    "dev:unregister": "node scripts/dev-unregister.mjs",
+    "config-builder:legacy": "tsx scripts/config-builder-server.mjs --legacy"
   },
   "keywords": [
     "utcp",

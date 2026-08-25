@@ -18,6 +18,7 @@
  *   --port <n>     preferred port (default 7821, or $PORT; auto-increments if taken)
  *   --host <h>     bind host (default 127.0.0.1)
  *   --no-open      do not auto-open the browser
+ *   --legacy       serve the previous dashboard UI (scripts/config-builder/legacy/)
  */
 
 import http from "http";
@@ -52,6 +53,7 @@ import {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const APP_DIR = path.join(__dirname, "config-builder");
+const LEGACY_APP_DIR = path.join(APP_DIR, "legacy");
 const DEFAULT_PORT = 7821;
 const SAVE_DIR_NAME = "configs";
 
@@ -129,15 +131,30 @@ function sendJson(res, status, payload) {
   res.end(body);
 }
 
-async function serveStatic(res, filePath) {
-  const data = await fs.readFile(filePath);
-  const type = CONTENT_TYPES[path.extname(filePath)] ?? "application/octet-stream";
+async function serveStatic(res, dirs, name) {
+  let data = null;
+  let served = null;
+  for (const dir of dirs) {
+    try {
+      data = await fs.readFile(path.join(dir, name));
+      served = name;
+      break;
+    } catch {
+      /* try the next dir */
+    }
+  }
+  if (data === null) {
+    res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
+    res.end("Not found");
+    return;
+  }
+  const type = CONTENT_TYPES[path.extname(served)] ?? "application/octet-stream";
   res.writeHead(200, { "content-type": type, "cache-control": "no-store" });
   res.end(data);
 }
 
-async function serveIndex(res, manifest) {
-  const template = await fs.readFile(path.join(APP_DIR, "index.html"), "utf-8");
+async function serveIndex(res, uiDir, manifest) {
+  const template = await fs.readFile(path.join(uiDir, "index.html"), "utf-8");
   // Embed the manifest so the app renders instantly on open (no fetch race).
   // Escape `</` so the JSON can never terminate the surrounding <script> tag.
   const injected = JSON.stringify(manifest).replace(/<\//g, "<\\/");
@@ -268,14 +285,15 @@ function setPin(ctx, name, host, pinned) {
   return { pins: out.pins };
 }
 
-function createServer(manifest, ctx) {
+function createServer(manifest, ctx, uiDir = APP_DIR) {
+  const staticDirs = [uiDir, APP_DIR];
   return http.createServer(async (req, res) => {
     try {
       const url = new URL(req.url, "http://localhost");
       const pathname = url.pathname;
 
       if (req.method === "GET" && (pathname === "/" || pathname === "/index.html")) {
-        await serveIndex(res, manifest);
+        await serveIndex(res, uiDir, manifest);
         return;
       }
 
@@ -349,12 +367,7 @@ function createServer(manifest, ctx) {
       }
 
       if (req.method === "GET" && /^\/[A-Za-z0-9_-]+\.(js|mjs|css|svg)$/.test(pathname)) {
-        try {
-          await serveStatic(res, path.join(APP_DIR, path.basename(pathname)));
-        } catch {
-          res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
-          res.end("Not found");
-        }
+        await serveStatic(res, staticDirs, path.basename(pathname));
         return;
       }
 
@@ -419,6 +432,7 @@ function openBrowser(url) {
 async function main() {
   const argv = process.argv.slice(2);
   const noOpen = argv.includes("--no-open") || process.env.CONFIG_BUILDER_NO_OPEN === "1";
+  const legacyUi = argv.includes("--legacy") || process.env.CONFIG_BUILDER_UI === "legacy";
   const host = parseFlag(argv, "--host") ?? "127.0.0.1";
   const portFlag = parseFlag(argv, "--port") ?? process.env.PORT;
   const parsedPort = Number(portFlag);
@@ -473,7 +487,7 @@ async function main() {
     backupRoot: path.join(home, ".host-import-backups"),
     pinsFile: path.join(home, ".host-import-pins.json")
   };
-  const server = createServer(manifest, hostImportCtx);
+  const server = createServer(manifest, hostImportCtx, legacyUi ? LEGACY_APP_DIR : APP_DIR);
   const port = await listenWithFallback(server, host, preferredPort);
   const url = `http://${host}:${port}/`;
 
