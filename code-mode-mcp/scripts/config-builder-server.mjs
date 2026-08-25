@@ -15,12 +15,13 @@
  * variables (UTCP_CONFIG_FILE / UTCP_CONFIG_PATH), then `.env`.
  *
  * Flags:
- *   --port <n>     preferred port (default 7821; auto-increments if taken)
+ *   --port <n>     preferred port (default 7821, or $PORT; auto-increments if taken)
  *   --host <h>     bind host (default 127.0.0.1)
  *   --no-open      do not auto-open the browser
  */
 
 import http from "http";
+import crypto from "crypto";
 import { promises as fs, existsSync, readFileSync, writeFileSync } from "fs";
 import path from "path";
 import os from "os";
@@ -53,6 +54,12 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const APP_DIR = path.join(__dirname, "config-builder");
 const DEFAULT_PORT = 7821;
 const SAVE_DIR_NAME = "configs";
+
+// Per-launch CSRF token. Every mutating endpoint requires it in the
+// `x-config-builder-token` header. The SPA receives it inside the manifest,
+// which cross-origin pages cannot read (same-origin policy), so a malicious
+// website cannot forge POSTs against the live host/UTCP configs.
+const SESSION_TOKEN = crypto.randomBytes(16).toString("hex");
 
 const CONTENT_TYPES = {
   ".html": "text/html; charset=utf-8",
@@ -104,7 +111,8 @@ async function buildManifest(configPath, onProgress = () => {}) {
     toolCount,
     manualCount: manifestManuals.length,
     config: rawConfig,
-    manuals: manifestManuals
+    manuals: manifestManuals,
+    token: SESSION_TOKEN
   };
 }
 
@@ -145,7 +153,9 @@ function readBody(req, limitBytes = 8 * 1024 * 1024) {
     req.on("data", (chunk) => {
       size += chunk.length;
       if (size > limitBytes) {
-        reject(new Error("Request body too large"));
+        const err = new Error("Request body too large");
+        err.statusCode = 413;
+        reject(err);
         req.destroy();
         return;
       }
@@ -244,7 +254,15 @@ function setPin(ctx, name, host, pinned) {
   const set = new Set((Array.isArray(data.pins) ? data.pins : []).map(asStr).filter(Boolean));
   const key = host && host !== "*" ? `${host}:${name}` : name;
   if (pinned) set.add(key);
-  else { set.delete(key); set.delete(name); }
+  else {
+    // Unpin removes every spelling of this server's pin: the bare name and any
+    // host-scoped `host:name` entries (an any-host unpin must not leave those).
+    set.delete(key);
+    set.delete(name);
+    if (!host || host === "*") {
+      for (const entry of [...set]) if (entry.endsWith(`:${name}`)) set.delete(entry);
+    }
+  }
   const out = { ...data, pins: [...set] };
   writeFileSync(ctx.pinsFile, JSON.stringify(out, null, 2) + "\n");
   return { pins: out.pins };
@@ -266,6 +284,15 @@ function createServer(manifest, ctx) {
         return;
       }
 
+      // Every mutating endpoint requires the per-launch token (CSRF guard: a
+      // cross-origin page can send a POST here but can never read the token).
+      if (req.method === "POST") {
+        if (req.headers["x-config-builder-token"] !== SESSION_TOKEN) {
+          sendJson(res, 403, { error: "Missing or invalid session token" });
+          return;
+        }
+      }
+
       if (req.method === "POST" && pathname === "/api/save") {
         const raw = await readBody(req);
         let payload;
@@ -283,6 +310,11 @@ function createServer(manifest, ctx) {
         const outDir = path.resolve(process.cwd(), SAVE_DIR_NAME);
         await fs.mkdir(outDir, { recursive: true });
         const outPath = path.join(outDir, filename);
+        // Never clobber an existing file silently — the client confirms first.
+        if (payload.overwrite !== true && existsSync(outPath)) {
+          sendJson(res, 409, { error: `${filename} already exists`, exists: true, path: outPath });
+          return;
+        }
         await fs.writeFile(outPath, JSON.stringify(payload.config, null, 2) + "\n");
         sendJson(res, 200, { ok: true, path: outPath });
         return;
@@ -329,7 +361,15 @@ function createServer(manifest, ctx) {
       res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
       res.end("Not found");
     } catch (error) {
-      sendJson(res, 500, { error: error instanceof Error ? error.message : String(error) });
+      // Best-effort error response; the socket may already be gone (e.g. the
+      // 413 path destroys it) — never let that take the whole server down.
+      try {
+        if (!res.headersSent && !res.writableEnded) {
+          sendJson(res, error?.statusCode ?? 500, { error: error instanceof Error ? error.message : String(error) });
+        }
+      } catch {
+        /* socket already closed */
+      }
     }
   });
 }
@@ -341,7 +381,7 @@ function listenWithFallback(server, host, startPort, attempts = 25) {
 
     const tryListen = () => {
       server.removeAllListeners("error");
-      server.once("error", (err) => {
+      const onError = (err) => {
         if (err.code === "EADDRINUSE" && triesLeft > 0) {
           triesLeft -= 1;
           port += 1;
@@ -349,8 +389,14 @@ function listenWithFallback(server, host, startPort, attempts = 25) {
         } else {
           reject(err);
         }
+      };
+      server.once("error", onError);
+      server.listen(port, host, () => {
+        // Drop the bind-retry handler once listening — a later runtime error
+        // must not re-enter listen() on an already-listening server.
+        server.removeListener("error", onError);
+        resolve(port);
       });
-      server.listen(port, host, () => resolve(port));
     };
 
     tryListen();
@@ -374,8 +420,12 @@ async function main() {
   const argv = process.argv.slice(2);
   const noOpen = argv.includes("--no-open") || process.env.CONFIG_BUILDER_NO_OPEN === "1";
   const host = parseFlag(argv, "--host") ?? "127.0.0.1";
-  const portFlag = parseFlag(argv, "--port");
-  const preferredPort = portFlag ? Number(portFlag) : DEFAULT_PORT;
+  const portFlag = parseFlag(argv, "--port") ?? process.env.PORT;
+  const parsedPort = Number(portFlag);
+  const preferredPort =
+    portFlag !== undefined && Number.isInteger(parsedPort) && parsedPort >= 0 && parsedPort <= 65535
+      ? parsedPort
+      : DEFAULT_PORT;
 
   intro("Tool Exclusion Config Builder");
 
