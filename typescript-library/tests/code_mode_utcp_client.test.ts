@@ -43,6 +43,11 @@ beforeAll(async () => {
     };
   });
 
+  // Function whose promise never settles — simulates a hung HTTP request or
+  // an MCP server that stopped answering, which is the case that used to pin
+  // an isolate thread in applySyncPromise forever.
+  addFunctionToUtcpDirectCall('hangForever', () => new Promise(() => {}));
+
   // Function that throws an error
   addFunctionToUtcpDirectCall('throwError', async (message: string) => {
     testResults.throwErrorCalled = { message, timestamp: Date.now() };
@@ -155,6 +160,17 @@ describe('CodeModeUtcpClient', () => {
             tool_call_template: {
               call_template_type: 'direct-call',
               callable_name: 'processData'
+            }
+          },
+          {
+            name: 'hangForever',
+            description: 'Never settles — for chain-timeout tests',
+            inputs: { type: 'object', properties: {} },
+            outputs: { type: 'object', properties: {} },
+            tags: ['testing'],
+            tool_call_template: {
+              call_template_type: 'direct-call',
+              callable_name: 'hangForever'
             }
           },
           {
@@ -462,6 +478,56 @@ describe('CodeModeUtcpClient', () => {
     const result = await client.callToolChain(code, 1000);
     expect(result.result).toBeNull();
     expect(result.logs.some((log: string) => log.includes('Code execution failed'))).toBe(true);
+  });
+
+  test('a tool call that never settles cannot outlive the chain (isolate-thread leak guard)', async () => {
+    // The bridge blocks the isolate's OS thread in applySyncPromise until the
+    // host promise settles. Pre-fix, a never-settling tool call left that
+    // thread parked forever — one leaked native thread per occurrence, with
+    // flat memory. The chain-end race must abandon the call: the chain still
+    // reports its normal timeout result, and the abandonment is recorded in
+    // the captured logs (pushed host-side as the chain is torn down).
+    const code = `
+      return test_tools.hangForever({});
+    `;
+
+    const result = await client.callToolChain(code, 1000);
+    expect(result.result).toBeNull();
+    expect(result.logs.some((log: string) => log.includes('Code execution failed'))).toBe(true);
+    expect(result.logs.some((log: string) => log.includes('abandoned'))).toBe(true);
+  });
+
+  test('blowing the memory limit returns an error result instead of rejecting', async () => {
+    // isolated-vm disposes an isolate that hits its memoryLimit on its own.
+    // The unconditional dispose in the old finally then threw "Isolate is
+    // already disposed" — and a throw from a finally REPLACES the return
+    // value, so callers saw an opaque rejection instead of the error shape
+    // every other failure takes.
+    const code = `
+      const hog = [];
+      while (true) {
+        hog.push(new Array(65536).fill(Math.random()));
+      }
+    `;
+
+    const started = Date.now();
+    const result = await client.callToolChain(code, 5000, 8);
+    expect(result.result).toBeNull();
+    expect(result.logs.some((log: string) => log.includes('Code execution failed'))).toBe(true);
+    // Distinguish the OOM path from the generic timeout backstop: the
+    // disposed-isolate run rejection surfaces isolated-vm's own memory-limit
+    // error, well before the 5000ms timer could fire. Without these two
+    // assertions the test would also pass via a plain timeout, proving
+    // nothing about the memory-limit path.
+    expect(result.logs.some((log: string) => log.toLowerCase().includes('memory'))).toBe(true);
+    expect(Date.now() - started).toBeLessThan(4500);
+  });
+
+  test('the chain stays usable after a hung tool call and an OOM (no poisoned client state)', async () => {
+    const { result } = await client.callToolChain(`
+      return test_tools.add({ a: 20, b: 22 });
+    `);
+    expect(result.result).toBe(42);
   });
 
   test('should handle code syntax errors', async () => {
