@@ -377,4 +377,5 @@ npm start       # node dist/index.js (stdio transport)
 | `config-builder` | Interactive exclusion dashboard. `config-builder:no-open` skips opening a browser; `config-builder:legacy` serves the previous UI. |
 | `generate-exclusion-configs` | Write full denylist / allowlist configs to `./configs/`. |
 | `host-import` | Migrate MCP servers from host configs into the UTCP config. |
+| `parity` | Register every manual and report per-manual tool counts; `--save` / `--baseline` snapshot and diff. Exits 1 on lost namespaces or failed registrations. |
 | `dev:register` / `dev:unregister` | Register / remove a local dev build against Claude Code. |
