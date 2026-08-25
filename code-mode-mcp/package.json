@@ -25,7 +25,7 @@
     "config-builder": "tsx scripts/config-builder-server.mjs",
     "config-builder:no-open": "tsx scripts/config-builder-server.mjs --no-open",
     "host-import": "tsx scripts/host-import-cli.mjs",
-  "parity": "tsx scripts/parity-check.mjs",
+    "parity": "tsx scripts/parity-check.mjs",
     "dev:register": "node scripts/dev-register.mjs",
     "dev:unregister": "node scripts/dev-unregister.mjs",
     "config-builder:legacy": "tsx scripts/config-builder-server.mjs --legacy"
@@ -73,10 +73,14 @@
     "@utcp/sdk": "^1.1.2",
     "@utcp/text": "^1.1.0",
     "dotenv": "^16.0.0",
+    "mcp-remote": "^0.2.3",
     "patch-package": "^8.0.1",
     "zod": "^3.22.0"
   },
   "bundledDependencies": [
+    "@utcp/mcp"
+  ],
+  "bundleDependencies": [
     "@utcp/mcp"
   ]
 }
