@@ -42,6 +42,15 @@ export function buildConfig(base, orderedManuals, decisions) {
     const dec = decisions.get(manual.name);
     if (dec && dec.removed) continue; // excluded from output entirely
 
+    // Discovery found no tools (server failed to register, timed out, or is
+    // genuinely empty) — there are no decisions to serialize, so pass the
+    // template through UNCHANGED. Stripping here would silently delete the
+    // user's existing exclude_tools/include_tools/default_disabled.
+    if (!Array.isArray(manual.tools) || manual.tools.length === 0) {
+      out.push({ ...template });
+      continue;
+    }
+
     const clean = stripExclusionKeys(template);
     if (!dec) {
       out.push(clean);

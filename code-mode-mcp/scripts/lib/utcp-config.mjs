@@ -263,10 +263,13 @@ export async function discoverManuals(configPath, onProgress = () => {}) {
   );
   // Exclusion keys are a registration-time concern (the runtime strips them
   // before the SDK sees them); discovery force-enables everything, so strip
-  // them here too. Fresh shallow copy per call — the SDK MUTATES the passed
-  // template's `name` to its sanitized form.
+  // them here too. Also strip the enabled/disabled flags withAllManualsEnabled
+  // injected: strict call-template schemas (text, file) reject unknown keys,
+  // which used to fail EVERY such manual with "Unrecognized key(s): 'enabled'".
+  // Fresh shallow copy per call — the SDK MUTATES the passed template's `name`
+  // to its sanitized form.
   const cleanTemplate = (t) => {
-    const { exclude_tools, include_tools, default_disabled, ...rest } = t;
+    const { exclude_tools, include_tools, default_disabled, enabled, disabled, ...rest } = t;
     return rest;
   };
   const templateSerializer = new CallTemplateSerializer();

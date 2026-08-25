@@ -115,3 +115,32 @@ test("buildConfig emits templates in the supplied manual order", () => {
   const out = buildConfig(base, [manuals[1], manuals[0]], decisions);
   assert.deepEqual(out.manual_call_templates.map((t) => t.name), ["m2", "m1"]);
 });
+
+test("buildConfig preserves original exclusion keys when discovery found no tools", () => {
+  // A manual whose server failed/timed out during discovery has tools: [] —
+  // its existing exclude_tools/include_tools/default_disabled must survive an
+  // export untouched instead of being silently stripped.
+  const baseWithKeys = {
+    manual_call_templates: [
+      { name: "m1", call_template_type: "mcp", exclude_tools: ["m1.keep_hidden"], default_disabled: false },
+      { name: "m2", call_template_type: "http", default_disabled: true, include_tools: ["m2.s.c"] }
+    ]
+  };
+  const emptyManuals = [
+    { name: "m1", tools: [] },
+    { name: "m2", tools: [] }
+  ];
+  const decisions = new Map([["m1", dec()], ["m2", dec({ defaultDisabled: true })]]);
+  const out = buildConfig(baseWithKeys, emptyManuals, decisions);
+  assert.deepEqual(out.manual_call_templates[0], baseWithKeys.manual_call_templates[0]);
+  assert.deepEqual(out.manual_call_templates[1], baseWithKeys.manual_call_templates[1]);
+});
+
+test("buildConfig still drops a zero-tool manual marked removed", () => {
+  const baseWithKeys = {
+    manual_call_templates: [{ name: "m1", call_template_type: "mcp", exclude_tools: ["m1.x"] }]
+  };
+  const decisions = new Map([["m1", dec({ removed: true })]]);
+  const out = buildConfig(baseWithKeys, [{ name: "m1", tools: [] }], decisions);
+  assert.equal(out.manual_call_templates.length, 0);
+});
