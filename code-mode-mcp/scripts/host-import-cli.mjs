@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { readAllHosts, defaultHostPaths } from "./lib/host-import/read-hosts.mjs";
 import { buildPlan, selectManuals, readUtcpConfig } from "./lib/host-import/plan.mjs";
-import { addManualsToUtcp, stripFromClaudeJson, stripFromCodexToml } from "./lib/host-import/apply.mjs";
+import { addManualsToUtcp, appendHarvestedEnv, stripFromClaudeJson, stripFromCodexToml } from "./lib/host-import/apply.mjs";
 import { loadPins } from "./lib/host-import/pins.mjs";
 import { ejectManuals } from "./lib/host-import/eject.mjs";
 import dotenv from "dotenv";
@@ -65,6 +65,10 @@ export function parseArgs(argv, options = {}) {
     pins: argv.reduce((acc, a, i) => (a === "--pin" && argv[i + 1] ? [...acc, argv[i + 1]] : acc), []),
     eject: val("--eject") ? val("--eject").split(",").map((s) => s.trim()).filter(Boolean) : null,
     to: val("--to") ? val("--to").split(",").map((s) => s.trim()).filter(Boolean) : ["claude-code"],
+    wrapRemote: val("--wrap-remote")
+      ? val("--wrap-remote").split(",").map((s) => s.trim()).filter(Boolean)
+      : [],
+    envFile: val("--env-file") || null,
     paths,
     utcpPath: safeResolveConfigPath({
       environment,
@@ -98,13 +102,23 @@ export function run(opts) {
     hosts = hosts.filter((h) => want.has(h.name));
   }
   const utcp = readUtcpConfig(opts.utcpPath);
-  const plan = buildPlan(hosts, utcp, loadPins(opts.pinsFile, opts.pins));
+  const plan = buildPlan(hosts, utcp, loadPins(opts.pinsFile, opts.pins), { wrapRemote: opts.wrapRemote });
   if (!opts.apply) return { plan };
 
   const manuals = selectManuals(plan, { risks: opts.risks });
   const applied = addManualsToUtcp(opts.utcpPath, manuals, opts.backupRoot);
 
-  const result = { plan, applied };
+  // p03: write harvested secrets for the manuals that actually landed.
+  const addedNames = new Set(applied.added);
+  const harvestEntries = [];
+  for (const item of plan.items) {
+    if (!item.manual || !addedNames.has(item.manual.name)) continue;
+    for (const h of item.harvested ?? []) harvestEntries.push({ manual: item.name, var: h.var, value: h.value });
+  }
+  const envPath = opts.envFile || path.join(path.dirname(opts.utcpPath), "code-mode.env");
+  const harvested = appendHarvestedEnv(envPath, harvestEntries, opts.backupRoot, {});
+
+  const result = { plan, applied, harvested: { ...harvested, envPath } };
   if (opts.stripHost) {
     const migrated = new Set(applied.added);
     const stripped = [];
@@ -157,6 +171,12 @@ function main() {
   if (res.applied) {
     console.log(`\nApplied: +${res.applied.added.length} manual(s) → ${opts.utcpPath}`);
     if (res.applied.backup) console.log(`Backup: ${res.applied.backup}`);
+  }
+  if (res.harvested?.written?.length) {
+    console.log(`Harvested ${res.harvested.written.length} secret var(s) → ${res.harvested.envPath} (0600)`);
+  }
+  if (res.harvested?.conflicts?.length) {
+    console.log(`⚠ Not overwritten (existing values differ): ${res.harvested.conflicts.join(", ")}`);
   }
   if (res.stripped) {
     const n = res.stripped.reduce((a, s) => a + s.removed.length, 0);

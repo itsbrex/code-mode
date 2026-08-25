@@ -1,7 +1,8 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import "@utcp/mcp";
 import { CallTemplateSerializer, ensureCorePluginsInitialized } from "@utcp/sdk";
 import { backupFile, pruneBackups } from "./backup.mjs";
+import { toManualIdentifier } from "../manual-name.mjs";
 
 function stampArgs(opts) {
   return opts.stamp ? [opts.stamp] : [];
@@ -40,6 +41,53 @@ export function addManualsToUtcp(utcpPath, manuals, backupRoot, opts = {}) {
   writeFileSync(utcpPath, JSON.stringify(config, null, 2) + "\n");
   pruneBackups(backupRoot);
   return { added, skipped, backup };
+}
+
+// --- Harvested-secret env writing (plan #005 p03) ----------------------------
+// Append harvested secrets to code-mode.env in the plan-#003 convention: the
+// plain var plus per-manual namespaced forms (`<sanitized>_VAR`, and the
+// dashes-doubled `the__swarm`-style variant when the manual name has dashes).
+// Existing vars are never overwritten — a conflicting value is reported and
+// skipped so a re-run cannot clobber a rotated credential.
+export function envFormsFor(manualName, varName) {
+  const forms = new Set([varName, `${toManualIdentifier(manualName)}_${varName}`]);
+  if (manualName.includes("-")) forms.add(`${manualName.replace(/-/g, "__")}_${varName}`);
+  return [...forms];
+}
+
+export function appendHarvestedEnv(envPath, entries, backupRoot, opts = {}) {
+  if (!entries.length) return { written: [], skipped: [], conflicts: [], backup: null };
+  const existing = existsSync(envPath) ? readFileSync(envPath, "utf8") : "";
+  const have = new Map();
+  for (const line of existing.split("\n")) {
+    const m = line.match(/^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/);
+    if (m) have.set(m[1], m[2].replace(/^"|"$/g, ""));
+  }
+  const written = [];
+  const skipped = [];
+  const conflicts = [];
+  const lines = [];
+  for (const { manual, var: varName, value } of entries) {
+    for (const form of envFormsFor(manual, varName)) {
+      if (have.has(form)) {
+        (have.get(form) === value ? skipped : conflicts).push(form);
+        continue;
+      }
+      lines.push(`${form}=${value}`);
+      have.set(form, value);
+      written.push(form);
+    }
+  }
+  if (!lines.length) return { written, skipped, conflicts, backup: null };
+  const backup = existsSync(envPath) ? backupFile(envPath, backupRoot, ...stampArgs(opts)) : null;
+  const next =
+    (existing.length && !existing.endsWith("\n") ? existing + "\n" : existing) +
+    `# harvested by host-import ${opts.stamp ?? ""}\n`.trimEnd() + "\n" +
+    lines.join("\n") + "\n";
+  writeFileSync(envPath, next);
+  chmodSync(envPath, 0o600);
+  if (backup) pruneBackups(backupRoot);
+  return { written, skipped, conflicts, backup };
 }
 
 // --- Host-config stripping (opt-in, destructive, backed-up) -------------------

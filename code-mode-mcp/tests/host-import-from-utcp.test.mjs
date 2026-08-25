@@ -15,6 +15,26 @@ test("npx mcp-remote wrap → url server with headers + bearer", () => {
   assert.deepEqual(manualToHostServer(m), { name: "ctx", server: { url: "https://x/mcp", headers: { "X-Key": "abc" }, bearerTokenEnvVar: "TOK" } });
 });
 
+test("direct http manual → url server with headers + bearer (p04)", () => {
+  const m = {
+    name: "typefully",
+    config: { mcpServers: { typefully: { url: "https://mcp.typefully.com/mcp", transport: "http", headers: { Authorization: "Bearer ${TYPEFULLY_API_KEY}", "User-Agent": "Claude-User" } } } },
+  };
+  assert.deepEqual(manualToHostServer(m), {
+    name: "typefully",
+    server: { url: "https://mcp.typefully.com/mcp", headers: { "User-Agent": "Claude-User" }, bearerTokenEnvVar: "TYPEFULLY_API_KEY" },
+  });
+});
+
+test("direct http manual round-trips through convertServer (p02+p04)", async () => {
+  const { convertServer } = await import("../scripts/lib/host-import/to-utcp.mjs");
+  const original = { url: "https://bee.theswarm.com/mcp", headers: { "x-api-key": "${THE_SWARM_API_KEY}" } };
+  const conv = convertServer("the-swarm", original);
+  assert.equal(conv.risk, "safe");
+  const back = manualToHostServer(conv.manual.config.mcpServers["the-swarm"] && conv.manual);
+  assert.deepEqual(back.server, original);
+});
+
 test("legacy proxy.js mcp-remote wrap → url server", () => {
   const m = {
     name: "zoominfo-mcp",

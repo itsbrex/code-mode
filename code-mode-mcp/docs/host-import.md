@@ -45,10 +45,36 @@ pass `--claude-code-path` / `--codex-path` / `--claude-desktop-path` to point at
 the copies. (Every write is still backed up under `~/.host-import-backups/`
 regardless.)
 
+## Remote conversion (plan #005 p02)
+
+Remote (`url`) servers convert to **direct `transport: "http"` manuals** with
+their headers preserved — no `mcp-remote` subprocess. The wrapper remains
+available for OAuth-gated endpoints (which UTCP's header-only http transport
+cannot authenticate against): pass `--wrap-remote <name[,name]>` to force the
+`npx -y mcp-remote` stdio wrap for those servers.
+
+## Secret harvesting (plan #005 p03)
+
+`--apply` never writes literal credentials into the UTCP config. Secret-shaped
+env/header values are replaced with `${VAR}` references and the values are
+appended to `code-mode.env` next to the UTCP config (override with
+`--env-file <path>`; file is chmod 0600 and backed up before writes). Both the
+plain and per-manual namespaced forms are written; existing vars are never
+overwritten — conflicts are reported and skipped.
+
 ## Risk tags
-- **safe** — stdio server (1:1 manual) or a remote server with no auth headers.
-- **partial** — remote server wrapped via `mcp-remote`; verify auth headers/env carry over.
+- **safe** — stdio server (1:1 manual) or a remote server with auth headers
+  (direct http manual).
+- **partial** — remote server with no auth info (direct http manual — verify it
+  is not OAuth-gated), or one forced through `--wrap-remote`.
 - **manual** — denylisted code-mode bridge, or a server with neither `command` nor `url`.
+
+## Parity gate (plan #005 p05)
+
+`npm run parity` registers every manual (with retries + per-manual diagnostics)
+and prints tool counts; `--save snap.json` stores a baseline and
+`--baseline snap.json` diffs against one, exiting 1 on lost namespaces or
+failed registrations. Run it after any import/eject batch.
 
 Duplicates (already in the UTCP config, matched by raw or sanitized name) are
 never re-added. Backups live under `~/.host-import-backups/<timestamp>/` (FIFO, keep 30).

@@ -20,9 +20,13 @@ export function existingManualNames(utcpConfig) {
   return set;
 }
 
-export function buildPlan(hosts, utcpConfig, pins = []) {
+export function buildPlan(hosts, utcpConfig, pins = [], opts = {}) {
   const existing = existingManualNames(utcpConfig);
-  const converted = hosts.map((entry) => ({ entry, conv: convertServer(entry.name, entry.server) }));
+  const wrapSet = new Set(opts.wrapRemote ?? []);
+  const converted = hosts.map((entry) => ({
+    entry,
+    conv: convertServer(entry.name, entry.server, { wrapRemote: wrapSet.has(entry.name) }),
+  }));
   const sourcesByManualName = new Map();
   for (const { entry, conv } of converted) {
     const manualName = conv.manual?.name;
@@ -55,6 +59,7 @@ export function buildPlan(hosts, utcpConfig, pins = []) {
       collision,
       pinned,
       manual: conv.ok && !collision ? conv.manual : undefined,
+      harvested: conv.harvested ?? [],
       source: entry,
     };
   });

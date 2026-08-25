@@ -33,6 +33,24 @@ export function manualToHostServer(manual) {
     return { name, server };
   }
 
+  // Direct http manual (plan #003 c04 / plan #005 p02 form): url + optional
+  // headers, no wrapper process. Reverses to a host `http` server; a
+  // `Bearer ${VAR}` Authorization header becomes bearerTokenEnvVar so hosts
+  // with first-class bearer support (Codex) round-trip cleanly.
+  if (typeof spec.url === "string" && typeof spec.command !== "string") {
+    const server = { url: spec.url };
+    const headers = {};
+    let bearerTokenEnvVar;
+    for (const [k, v] of Object.entries(spec.headers ?? {})) {
+      const bearer = typeof v === "string" ? v.match(/^Bearer\s+\$\{([A-Za-z_][A-Za-z0-9_]*)\}$/) : null;
+      if (/^authorization$/i.test(k) && bearer) bearerTokenEnvVar = bearer[1];
+      else headers[k] = v;
+    }
+    if (Object.keys(headers).length) server.headers = headers;
+    if (bearerTokenEnvVar) server.bearerTokenEnvVar = bearerTokenEnvVar;
+    return { name, server };
+  }
+
   const server = {};
   if (typeof spec.command === "string") server.command = spec.command;
   if (Array.isArray(spec.args)) server.args = spec.args.filter((x) => typeof x === "string");
