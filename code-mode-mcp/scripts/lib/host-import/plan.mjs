@@ -42,22 +42,28 @@ export function buildPlan(hosts, utcpConfig, pins = [], opts = {}) {
     );
     const duplicate = existing.has(entry.name) || (manualName ? existing.has(manualName) : false);
     const pinned = isPinned(pins, entry);
+    const bridge = Boolean(conv.bridge);
     return {
       host: entry.host,
       scope: entry.scope,
       projectKey: entry.projectKey,
       name: entry.name,
       risk: collision ? "manual" : conv.risk,
-      reason: pinned
-        ? "pinned — never touched"
-        : duplicate
-          ? "already present in the UTCP config"
-          : collision
-            ? `sanitized manual name '${manualName}' collides with another host server`
-            : conv.reason,
+      // A bridge outranks "duplicate": a bridge instance whose name matches a
+      // federated manual must read as a bridge, never as strippable.
+      reason: bridge
+        ? conv.reason
+        : pinned
+          ? "pinned — never touched"
+          : duplicate
+            ? "already present in the UTCP config"
+            : collision
+              ? `sanitized manual name '${manualName}' collides with another host server`
+              : conv.reason,
       duplicate,
       collision,
       pinned,
+      bridge,
       manual: conv.ok && !collision ? conv.manual : undefined,
       harvested: conv.harvested ?? [],
       source: entry,

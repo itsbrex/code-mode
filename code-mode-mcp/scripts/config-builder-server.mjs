@@ -39,9 +39,10 @@ import { resolveConfigPath, discoverManuals } from "./lib/utcp-config.mjs";
 // from the live host configs — every mutation is backup-on-write.
 import { readAllHosts, defaultHostPaths } from "./lib/host-import/read-hosts.mjs";
 import { buildPlan, readUtcpConfig, existingManualNames } from "./lib/host-import/plan.mjs";
-import { addManualsToUtcp, stripFromClaudeJson, stripFromCodexToml } from "./lib/host-import/apply.mjs";
+import { addManualsToUtcp, appendHarvestedEnv, stripFromClaudeJson, stripFromCodexToml } from "./lib/host-import/apply.mjs";
 import { loadPins } from "./lib/host-import/pins.mjs";
-import { DENYLIST } from "./lib/host-import/to-utcp.mjs";
+import { loadSources, recordSources, stableStringify } from "./lib/host-import/sources.mjs";
+import { isCodeModeBridge } from "./lib/host-import/to-utcp.mjs";
 // Run via `tsx` (see package.json `config-builder` script): tsx transpiles the
 // TypeScript entry on the fly under Node, so no `tsc`/`dist` build is needed to
 // launch. (Node — not Bun — because the discovery pipeline loads the native
@@ -201,8 +202,18 @@ function planItemView(it) {
     reason: it.reason,
     duplicate: it.duplicate,
     pinned: it.pinned,
+    bridge: Boolean(it.bridge),
     // a row is migratable when it converts cleanly and isn't already federated/pinned
-    canMigrate: Boolean(it.manual) && !it.duplicate && !it.pinned
+    canMigrate: Boolean(it.manual) && !it.duplicate && !it.pinned,
+    // Raw host entry + the UTCP manual it would become — the UI shows both in
+    // the row's expandable config view so same-named-but-different servers can
+    // be told apart before import. Local-only UI; this is the user's own file.
+    server: it.source?.server ?? null,
+    manual: it.manual ?? null,
+    // Key-order-independent fingerprint of what would be imported (falls back
+    // to the raw server for non-convertible rows) — equal hash + equal name
+    // across hosts = a true duplicate the import will merge into one manual.
+    configHash: stableStringify(it.manual ?? it.source?.server ?? null)
   };
 }
 
@@ -219,24 +230,76 @@ function hostPlanView(ctx) {
     utcpPath: ctx.configPath,
     hostPaths: ctx.hostPaths,
     items: plan.items.map(planItemView),
-    pins: loadPins(ctx.pinsFile, []).map((p) => (p.host && p.host !== "*" ? `${p.host}:${p.name}` : p.name))
+    pins: loadPins(ctx.pinsFile, []).map((p) => (p.host && p.host !== "*" ? `${p.host}:${p.name}` : p.name)),
+    // Provenance for already-federated manuals (which hosts they came from) —
+    // lets the UI say "imported from claude-code + codex" on federated rows.
+    sources: loadSources(ctx.sourcesFile)
   };
 }
 
-// Migrate the named host servers into the UTCP config (deduped, backup-on-write).
-function applyImport(ctx, names) {
-  const want = new Set(Array.isArray(names) ? names : []);
+// Migrate host servers into the UTCP config (deduped, backup-on-write).
+// `selections` picks exact rows ({name, host, scope, projectKey}) so a
+// same-named-but-different server conflict resolves to the row the user chose;
+// legacy `names` keeps first-wins behavior. One manual is imported per name;
+// every host row whose converted manual is IDENTICAL to the imported one is
+// recorded in the provenance sidecar (true duplicates merge, sources kept).
+function applyImport(ctx, body) {
+  const selections = Array.isArray(body?.selections) ? body.selections : null;
+  const names = Array.isArray(body?.names) ? body.names : [];
   const plan = buildHostPlan(ctx);
-  const seen = new Set();
-  const manuals = [];
-  for (const it of plan.items) {
-    if (!want.has(it.name) || it.duplicate || it.pinned || !it.manual) continue;
-    if (seen.has(it.name)) continue;
-    seen.add(it.name);
-    manuals.push(it.manual);
+  const rowKey = (r) => `${r.host}|${r.scope === "project" ? "project" : "global"}|${r.projectKey || ""}|${r.name}`;
+  const chosen = new Map(); // raw server name -> plan item
+  if (selections) {
+    const wantKeys = new Set(selections.filter((s) => s && s.name).map(rowKey));
+    for (const it of plan.items) {
+      if (!wantKeys.has(rowKey(it)) || it.duplicate || it.pinned || !it.manual) continue;
+      if (!chosen.has(it.name)) chosen.set(it.name, it);
+    }
+  } else {
+    const want = new Set(names);
+    for (const it of plan.items) {
+      if (!want.has(it.name) || it.duplicate || it.pinned || !it.manual) continue;
+      if (!chosen.has(it.name)) chosen.set(it.name, it);
+    }
   }
-  if (!manuals.length) return { added: [], skipped: [], backup: null };
-  return addManualsToUtcp(ctx.configPath, manuals, ctx.backupRoot);
+  if (!chosen.size) return { added: [], skipped: [], backup: null, sourcesRecorded: {}, harvested: null };
+  const manuals = [...chosen.values()].map((it) => it.manual);
+  const result = addManualsToUtcp(ctx.configPath, manuals, ctx.backupRoot);
+  const addedSet = new Set(result.added);
+
+  // Harvested secrets → code-mode.env, exactly like the CLI --apply path (the
+  // web migrate previously dropped them, leaving ${VAR} refs with no values).
+  const harvestEntries = [];
+  for (const it of chosen.values()) {
+    if (!addedSet.has(it.manual.name)) continue;
+    const planItem = plan.items.find((p) => p.name === it.name && p.host === it.host && p.scope === it.scope);
+    for (const h of planItem?.harvested ?? []) harvestEntries.push({ manual: it.name, var: h.var, value: h.value });
+  }
+  const envPath = path.join(path.dirname(ctx.configPath), "code-mode.env");
+  const harvested = harvestEntries.length
+    ? { ...appendHarvestedEnv(envPath, harvestEntries, ctx.backupRoot, {}), envPath }
+    : null;
+
+  // Provenance: every host row with the SAME name and an IDENTICAL converted
+  // manual merges into this one import — record each of them so eject can
+  // route the server back to all of its original clients.
+  const sourcesRecorded = {};
+  for (const it of chosen.values()) {
+    if (!addedSet.has(it.manual.name)) continue;
+    const fingerprint = stableStringify(it.manual);
+    const twins = plan.items.filter(
+      (o) => o.name === it.name && o.manual && stableStringify(o.manual) === fingerprint
+    );
+    const sources = twins.map((o) => ({
+      host: o.host,
+      scope: o.scope,
+      projectKey: o.projectKey || undefined,
+      name: o.name
+    }));
+    recordSources(ctx.sourcesFile, it.manual.name, ctx.configPath, sources);
+    sourcesRecorded[it.manual.name] = [...new Set(sources.map((s) => s.host))];
+  }
+  return { ...result, sourcesRecorded, harvested };
 }
 
 // Strip the given host entries from their real configs. Guarded: never strips a
@@ -245,11 +308,23 @@ function applyImport(ctx, names) {
 // already providing). Grouped by file so each config is backed up + written once.
 function stripHosts(ctx, entries) {
   const federated = existingManualNames(readUtcpConfig(ctx.configPath));
+  // Look up each entry's actual host spec so bridge instances registered under
+  // arbitrary names are refused too — a name-only denylist misses them.
+  const hostSpecs = new Map(
+    readAllHosts(ctx.hostPaths).map((h) => [
+      `${h.host}|${h.scope === "project" ? "project" : "global"}|${h.projectKey || ""}|${h.name}`,
+      h.server
+    ])
+  );
   const groups = new Map();
   const refused = [];
   for (const e of Array.isArray(entries) ? entries : []) {
     if (!e || typeof e.name !== "string") continue;
-    if (DENYLIST.has(e.name)) { refused.push({ name: e.name, reason: "denylisted bridge" }); continue; }
+    const specKey = `${e.host}|${e.scope === "project" ? "project" : "global"}|${e.projectKey || ""}|${e.name}`;
+    if (isCodeModeBridge(e.name, hostSpecs.get(specKey) || {})) {
+      refused.push({ name: e.name, reason: "code-mode bridge (auto-detected)" });
+      continue;
+    }
     if (!federated.has(e.name)) { refused.push({ name: e.name, reason: "not federated in UTCP" }); continue; }
     const scope = e.scope === "project" ? "project" : "global";
     const key = `${e.host}|${scope}|${e.projectKey || ""}`;
@@ -356,7 +431,7 @@ function createServer(manifest, ctx, uiDir = APP_DIR) {
         try { body = JSON.parse(raw); } catch { sendJson(res, 400, { error: "Invalid JSON body" }); return; }
 
         if (pathname === "/api/host-apply") {
-          const result = applyImport(ctx, body && body.names);
+          const result = applyImport(ctx, body);
           sendJson(res, 200, { ok: true, ...result, plan: hostPlanView(ctx) });
           return;
         }
@@ -491,7 +566,8 @@ async function main() {
     configPath,
     hostPaths: defaultHostPaths(home),
     backupRoot: path.join(home, ".host-import-backups"),
-    pinsFile: path.join(home, ".host-import-pins.json")
+    pinsFile: path.join(home, ".host-import-pins.json"),
+    sourcesFile: path.join(home, ".host-import-sources.json")
   };
   const server = createServer(manifest, hostImportCtx, legacyUi ? LEGACY_APP_DIR : APP_DIR);
   const port = await listenWithFallback(server, host, preferredPort);

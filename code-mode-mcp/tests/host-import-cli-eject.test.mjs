@@ -23,6 +23,8 @@ test("run import honors --pin (pinned server not migrated)", () => {
     paths: { claudeCode, claudeDesktop: join(d, "z.json"), codex: join(d, "z.toml") },
     utcpPath,
     backupRoot: join(d, ".bk"),
+    sourcesFile: join(d, "sources.json"),
+    pinsFile: join(d, "pins.json"),
   };
   run(opts);
   const names = JSON.parse(readFileSync(utcpPath, "utf8")).manual_call_templates.map((t) => t.name);
@@ -43,6 +45,8 @@ test("run eject moves a manual back to a host and out of UTCP", () => {
     paths: { claudeCode, claudeDesktop: join(d, "z.json"), codex: join(d, "z.toml") },
     utcpPath,
     backupRoot: join(d, ".bk"),
+    sourcesFile: join(d, "sources.json"),
+    pinsFile: join(d, "pins.json"),
   };
   const res = run(opts);
   assert.deepEqual(res.removed, ["memory"]);

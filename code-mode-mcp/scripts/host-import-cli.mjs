@@ -7,6 +7,7 @@ import { buildPlan, selectManuals, readUtcpConfig } from "./lib/host-import/plan
 import { addManualsToUtcp, appendHarvestedEnv, stripFromClaudeJson, stripFromCodexToml } from "./lib/host-import/apply.mjs";
 import { loadPins } from "./lib/host-import/pins.mjs";
 import { ejectManuals } from "./lib/host-import/eject.mjs";
+import { loadSources, recordSources, removeSources, stableStringify } from "./lib/host-import/sources.mjs";
 import dotenv from "dotenv";
 import { resolveUtcpConfigPath } from "../config-path.mjs";
 
@@ -64,7 +65,10 @@ export function parseArgs(argv, options = {}) {
     pinsFile: val("--pins-file") || `${home}/.host-import-pins.json`,
     pins: argv.reduce((acc, a, i) => (a === "--pin" && argv[i + 1] ? [...acc, argv[i + 1]] : acc), []),
     eject: val("--eject") ? val("--eject").split(",").map((s) => s.trim()).filter(Boolean) : null,
-    to: val("--to") ? val("--to").split(",").map((s) => s.trim()).filter(Boolean) : ["claude-code"],
+    // null = no explicit --to: eject resolves each manual's targets from the
+    // provenance sidecar (recorded at import time), falling back to claude-code.
+    to: val("--to") ? val("--to").split(",").map((s) => s.trim()).filter(Boolean) : null,
+    sourcesFile: val("--sources-file") || `${home}/.host-import-sources.json`,
     wrapRemote: val("--wrap-remote")
       ? val("--wrap-remote").split(",").map((s) => s.trim()).filter(Boolean)
       : [],
@@ -92,8 +96,30 @@ export function renderPlanText(plan) {
 
 export function run(opts) {
   if (opts.eject && opts.eject.length) {
-    const targets = opts.to.map((host) => ({ host, scope: "global" }));
-    return ejectManuals(opts.utcpPath, opts.eject, targets, opts.paths, opts.backupRoot);
+    if (opts.to) {
+      // Explicit --to: one target set for every ejected manual.
+      const targets = opts.to.map((host) => ({ host, scope: "global" }));
+      const res = ejectManuals(opts.utcpPath, opts.eject, targets, opts.paths, opts.backupRoot);
+      removeSources(opts.sourcesFile, res.removed);
+      return res;
+    }
+    // No --to: route each manual back to the host(s) it was imported from
+    // (provenance sidecar, recorded at import). Unknown manuals fall back to
+    // claude-code, matching the old default.
+    const sources = loadSources(opts.sourcesFile);
+    const ejected = [];
+    let removed = [];
+    for (const name of opts.eject) {
+      const recorded = sources[name]?.sources ?? [];
+      const targets = recorded.length
+        ? recorded.map((s) => ({ host: s.host, scope: s.scope, projectKey: s.projectKey }))
+        : [{ host: "claude-code", scope: "global" }];
+      const res = ejectManuals(opts.utcpPath, [name], targets, opts.paths, opts.backupRoot);
+      ejected.push(...res.ejected.map((e) => ({ ...e, fromProvenance: recorded.length > 0 })));
+      removed = removed.concat(res.removed);
+    }
+    removeSources(opts.sourcesFile, removed);
+    return { ejected, removed };
   }
 
   let hosts = readAllHosts(opts.paths);
@@ -118,6 +144,21 @@ export function run(opts) {
   const envPath = opts.envFile || path.join(path.dirname(opts.utcpPath), "code-mode.env");
   const harvested = appendHarvestedEnv(envPath, harvestEntries, opts.backupRoot, {});
 
+  // Provenance: for each imported manual, record every host row whose converted
+  // manual is identical (true duplicates merge into one import) so a later
+  // `--eject <name>` without `--to` can route it back to its original client(s).
+  for (const manual of manuals) {
+    if (!addedNames.has(manual.name)) continue;
+    const fingerprint = stableStringify(manual);
+    const twins = plan.items.filter((o) => o.manual && stableStringify(o.manual) === fingerprint);
+    recordSources(
+      opts.sourcesFile,
+      manual.name,
+      opts.utcpPath,
+      twins.map((o) => ({ host: o.host, scope: o.scope, projectKey: o.projectKey || undefined, name: o.name }))
+    );
+  }
+
   const result = { plan, applied, harvested: { ...harvested, envPath } };
   if (opts.stripHost) {
     const migrated = new Set(applied.added);
@@ -125,6 +166,8 @@ export function run(opts) {
     // group migrated source entries by host/scope so we strip from the right place
     for (const item of plan.items) {
       if (!migrated.has(item.name)) continue;
+      if (item.bridge) continue; // bridges can never be migrated, so never strip one
+
       if (item.host === "codex") {
         const r = stripFromCodexToml(opts.paths.codex, [item.name], opts.backupRoot);
         stripped.push({ host: "codex", name: item.name, removed: r.removed });
@@ -163,7 +206,8 @@ function main() {
   }
   const res = run(opts);
   if (res.ejected) {
-    for (const e of res.ejected) console.log(`Ejected ${e.name} → ${e.wroteTo.join(", ")}`);
+    for (const e of res.ejected)
+      console.log(`Ejected ${e.name} → ${e.wroteTo.join(", ")}${e.fromProvenance ? " (recorded source)" : ""}`);
     console.log(`Removed ${res.removed.length} manual(s) from ${opts.utcpPath}`);
     return;
   }
