@@ -6,7 +6,7 @@ import { readAllHosts, defaultHostPaths } from "./lib/host-import/read-hosts.mjs
 import { buildPlan, selectManuals, readUtcpConfig } from "./lib/host-import/plan.mjs";
 import { addManualsToUtcp, appendHarvestedEnv, stripFromClaudeJson, stripFromCodexToml } from "./lib/host-import/apply.mjs";
 import { loadPins } from "./lib/host-import/pins.mjs";
-import { ejectManuals, readEjectableManuals } from "./lib/host-import/eject.mjs";
+import { ejectManuals } from "./lib/host-import/eject.mjs";
 import { loadSources, recordSources, removeSources, planItemFingerprint } from "./lib/host-import/sources.mjs";
 import dotenv from "dotenv";
 import { resolveUtcpConfigPath } from "../config-path.mjs";
@@ -96,8 +96,7 @@ export function renderPlanText(plan) {
 
 export function run(opts) {
   if (opts.eject && opts.eject.length) {
-    loadSources(opts.sourcesFile, opts.utcpPath);
-    readEjectableManuals(opts.utcpPath, opts.eject);
+    const sources = loadSources(opts.sourcesFile, opts.utcpPath);
     if (opts.to) {
       // Explicit --to: one target set for every ejected manual.
       const targets = opts.to.map((host) => ({ host, scope: "global" }));
@@ -108,20 +107,18 @@ export function run(opts) {
     // No --to: route each manual back to the host(s) it was imported from
     // (provenance sidecar, recorded at import). Unknown manuals fall back to
     // claude-code, matching the old default.
-    const sources = loadSources(opts.sourcesFile, opts.utcpPath);
-    const ejected = [];
-    let removed = [];
-    for (const name of opts.eject) {
+    const targetsByManual = new Map([...new Set(opts.eject)].map((name) => {
       const recorded = Object.hasOwn(sources, name) ? sources[name].sources : [];
       const targets = recorded.length
         ? recorded.map((s) => ({ host: s.host, scope: s.scope, projectKey: s.projectKey, name: s.name }))
         : [{ host: "claude-code", scope: "global" }];
-      const res = ejectManuals(opts.utcpPath, [name], targets, opts.paths, opts.backupRoot);
-      ejected.push(...res.ejected.map((e) => ({ ...e, fromProvenance: recorded.length > 0 })));
-      removed = removed.concat(res.removed);
-    }
-    removeSources(opts.sourcesFile, removed, opts.utcpPath);
-    return { ejected, removed };
+      return [name, targets];
+    }));
+    const res = ejectManuals(opts.utcpPath, opts.eject, targetsByManual, opts.paths, opts.backupRoot);
+    removeSources(opts.sourcesFile, res.removed, opts.utcpPath);
+    return { ...res, ejected: res.ejected.map((e) => ({
+      ...e, fromProvenance: Object.hasOwn(sources, e.name) && sources[e.name].sources.length > 0
+    })) };
   }
 
   let hosts = readAllHosts(opts.paths);

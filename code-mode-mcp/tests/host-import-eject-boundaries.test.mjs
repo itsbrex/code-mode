@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, readFileSync, rmSync, existsSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync, rmSync, existsSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseArgs, run } from "../scripts/host-import-cli.mjs";
@@ -79,6 +79,63 @@ test("malformed recorded target identities stop the complete ejection before wri
     assert.deepEqual(files.map((file) => readFileSync(file, "utf8")), before);
     assert.equal(existsSync(opts.backupRoot), false);
   }
+});
+
+test("ejection rejects colliding recorded destinations including aliased host files", (t) => {
+  for (const aliasHosts of ["same-host", "same-file", "symlink"]) {
+    const opts = fixture(t, [manual("first", { command: "first-server" }), manual("second", { command: "second-server" })]);
+    if (aliasHosts === "same-file") opts.paths.claudeDesktop = opts.paths.claudeCode;
+    if (aliasHosts === "symlink") {
+      const alias = `${opts.paths.claudeDesktop}.alias`;
+      symlinkSync(opts.paths.claudeCode, alias, "file");
+      opts.paths.claudeDesktop = alias;
+    }
+    recordSources(opts.sourcesFile, "first", opts.utcpPath, [{ host: "claude-code", scope: "global", name: "shared" }]);
+    recordSources(opts.sourcesFile, "second", opts.utcpPath, [{ host: aliasHosts === "same-host" ? "claude-code" : "claude-desktop", scope: "global", name: "shared" }]);
+    const files = [opts.utcpPath, ...Object.values(opts.paths), opts.sourcesFile];
+    const before = files.map((file) => readFileSync(file, "utf8"));
+    assert.throws(() => run({ ...opts, eject: ["first", "second"] }), /destination collision/);
+    assert.deepEqual(files.map((file) => readFileSync(file, "utf8")), before);
+    assert.equal(existsSync(opts.backupRoot), false);
+  }
+});
+
+test("explicit ejection rejects two manuals mapped to the same target name", (t) => {
+  const opts = fixture(t, [manual("first"), manual("second")]);
+  const files = [opts.utcpPath, ...Object.values(opts.paths)];
+  const before = files.map((file) => readFileSync(file, "utf8"));
+  assert.throws(() => ejectManuals(opts.utcpPath, ["first", "second"], [
+    { host: "claude-code", name: "shared" }
+  ], opts.paths, opts.backupRoot), /destination collision/);
+  assert.deepEqual(files.map((file) => readFileSync(file, "utf8")), before);
+  assert.equal(existsSync(opts.backupRoot), false);
+});
+
+test("ejection refuses mixed host formats sharing one destination file", (t) => {
+  const opts = fixture(t, [manual("memory")]);
+  opts.paths.codex = opts.paths.claudeCode;
+  recordSources(opts.sourcesFile, "memory", opts.utcpPath, [
+    { host: "claude-code", scope: "global", name: "memory" },
+    { host: "codex", scope: "global", name: "memory" }
+  ]);
+  const files = [opts.utcpPath, ...Object.values(opts.paths), opts.sourcesFile];
+  const before = files.map((file) => readFileSync(file, "utf8"));
+  assert.throws(() => run({ ...opts, eject: ["memory"] }), /Host formats cannot share/);
+  assert.deepEqual(files.map((file) => readFileSync(file, "utf8")), before);
+  assert.equal(existsSync(opts.backupRoot), false);
+});
+
+test("ejection keeps identical raw names in distinct project scopes independent", (t) => {
+  const opts = fixture(t, [manual("first", { command: "first-server" }), manual("second", { command: "second-server" })]);
+  for (const name of ["first", "second"]) {
+    recordSources(opts.sourcesFile, name, opts.utcpPath, [{ host: "claude-code", scope: "project", projectKey: `/fixture/${name}`, name: "shared" }]);
+  }
+  const result = run({ ...opts, eject: ["first", "second"] });
+  assert.deepEqual(result.removed, ["first", "second"]);
+  const restored = JSON.parse(readFileSync(opts.paths.claudeCode, "utf8"));
+  assert.equal(restored.projects["/fixture/first"].mcpServers.shared.command, "first-server");
+  assert.equal(restored.projects["/fixture/second"].mcpServers.shared.command, "second-server");
+  assert.deepEqual(loadSources(opts.sourcesFile, opts.utcpPath), {});
 });
 
 test("ejection restores raw source names and project scope without consuming another config's provenance", (t) => {

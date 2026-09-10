@@ -122,8 +122,12 @@ config. All writes are backed up.
 The entire selection is checked before any destination is written. Only MCP
 manuals containing one convertible server can be ejected; other UTCP protocols,
 empty or multi-server MCP manuals, and unsupported target scopes are rejected.
-Provenance routing restores the original host name and project scope. Unknown
-manual names remain a no-op.
+Provenance routing restores the original host name and project scope. All routes
+are planned as one batch: two selected manuals cannot claim the same resolved
+destination file, scope/project, and raw name. Identical paths and symlink aliases
+are checked together; the same raw name in distinct project scopes stays valid.
+JSON and TOML hosts cannot share a destination file, even for the same manual.
+Unknown manual names remain a no-op.
 
 ## Bridge auto-detection
 

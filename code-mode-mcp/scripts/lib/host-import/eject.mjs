@@ -1,4 +1,5 @@
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync, realpathSync } from "node:fs";
+import { dirname, relative, resolve } from "node:path";
 import { backupFile, pruneBackups } from "./backup.mjs";
 import { manualToHostServer } from "./from-utcp.mjs";
 import { addToClaudeJson, addToCodexToml } from "./host-write.mjs";
@@ -41,7 +42,7 @@ export function readEjectableManuals(utcpPath, names) {
   });
 }
 
-export function ejectManuals(utcpPath, names, targets, hostPaths, backupRoot, opts = {}) {
+function validateTargets(targets) {
   if (!Array.isArray(targets) || !targets.length || targets.some((target) => !target ||
     !["claude-code", "claude-desktop", "codex"].includes(target.host) ||
     (target.scope !== undefined && !["global", "project"].includes(target.scope)) ||
@@ -49,11 +50,51 @@ export function ejectManuals(utcpPath, names, targets, hostPaths, backupRoot, op
     (target.name !== undefined && (typeof target.name !== "string" || !target.name.trim())))) {
     throw new Error("Ejection requires explicit supported host targets and project scope");
   }
+}
+
+function destinationFile(file) {
+  const absolute = resolve(file);
+  let ancestor = absolute;
+  for (;;) {
+    try { return resolve(realpathSync(ancestor), relative(ancestor, absolute)); }
+    catch (error) {
+      const parent = dirname(ancestor);
+      if (error.code !== "ENOENT" || parent === ancestor) throw error;
+      ancestor = parent;
+    }
+  }
+}
+
+// A shared target array preserves the original API; a per-manual Map lets the
+// CLI route provenance as one batch, with every destination checked up front.
+export function ejectManuals(utcpPath, names, targets, hostPaths, backupRoot, opts = {}) {
+  if (!(targets instanceof Map)) validateTargets(targets);
   // Validate the entire selection before writing any destination or removing a
   // manual. Other UTCP protocols and multi-server MCP configs cannot round-trip.
   const entries = readEjectableManuals(utcpPath, names);
+  const routed = entries.map((entry) => ({ ...entry, targets: targets instanceof Map ? targets.get(entry.name) : targets }));
+  const destinations = new Map();
+  const formats = new Map();
+  for (const { name, targets: routes } of routed) {
+    validateTargets(routes);
+    for (const target of routes) {
+      const file = target.host === "codex" ? hostPaths.codex : target.host === "claude-desktop" ? hostPaths.claudeDesktop : hostPaths.claudeCode;
+      const destination = destinationFile(file);
+      const format = target.host === "codex" ? "toml" : "json";
+      if (formats.has(destination) && formats.get(destination) !== format) {
+        throw new Error("Host formats cannot share an ejection destination file");
+      }
+      formats.set(destination, format);
+      const scope = target.scope ?? "global";
+      const key = JSON.stringify([destination, scope, scope === "project" ? target.projectKey : "", target.name ?? name]);
+      if (destinations.has(key) && destinations.get(key) !== name) {
+        throw new Error(`Ejection destination collision between '${destinations.get(key)}' and '${name}'`);
+      }
+      destinations.set(key, name);
+    }
+  }
   const ejected = [];
-  for (const { name, server } of entries) {
+  for (const { name, server, targets } of routed) {
     const wroteTo = [];
     for (const target of targets) {
       const sourceName = target.name ?? name;
