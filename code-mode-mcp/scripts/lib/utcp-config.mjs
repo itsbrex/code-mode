@@ -204,9 +204,9 @@ const MAX_DISCOVERY_ATTEMPTS = 3;
  *
  * `onProgress(message)` is called with human-readable status lines.
  */
-export async function discoverManuals(configPath, onProgress = () => {}) {
+export async function discoverManuals(configPath, onProgress = () => {}, { allowEmpty = false } = {}) {
   const { rawConfig, templates } = await loadConfig(configPath);
-  if (templates.length === 0) {
+  if (templates.length === 0 && (!allowEmpty || !Array.isArray(rawConfig.manual_call_templates))) {
     throw new Error(`No manual_call_templates found in ${configPath}`);
   }
 
@@ -214,6 +214,12 @@ export async function discoverManuals(configPath, onProgress = () => {}) {
 
   const scriptDir = path.dirname(configPath);
   const serializer = new UtcpClientConfigSerializer();
+  if (templates.length === 0) {
+    // The builder must support the first import without starting a discovery
+    // client. Keep schema validation and strict defaults for other callers.
+    serializer.validateDict(rawConfig);
+    return { configPath, rawConfig, templates, toolCount: 0, manuals: [], toolsByManual: new Map() };
+  }
 
   const allTemplateNames = templates
     .map((t) => (typeof t?.name === "string" ? t.name : null))

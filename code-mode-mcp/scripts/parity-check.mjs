@@ -17,7 +17,13 @@
 
 import { promises as fs } from "fs";
 import process from "process";
+import { ensureSecretEnv } from "./lib/secret-env.mjs";
 import { discoverManuals, resolveConfigPath } from "./lib/utcp-config.mjs";
+
+// Re-exec under `op run --env-file configs/code-mode.env` when available, so a
+// bare `npm run parity` sees the same secrets as the live bridge and a missing
+// wrapper cannot masquerade as nine broken manuals.
+ensureSecretEnv();
 
 function flagValue(args, flag) {
   const i = args.indexOf(flag);

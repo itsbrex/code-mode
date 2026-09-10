@@ -1,7 +1,113 @@
+import { readFileSync, statSync, realpathSync } from "node:fs";
+import { dirname, isAbsolute, resolve as resolvePath } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { toManualIdentifier } from "../manual-name.mjs";
+import { relativeImports } from "./relative-imports.mjs";
 
 // Bridges that must never be federated into code-mode (would route to itself).
 export const DENYLIST = new Set(["code-mode", "code-mode-mcp", "attio-code-mode", "attio-code-mode-mcp"]);
+
+// --- Bridge auto-detection --------------------------------------------------
+// The exact-name denylist misses bridge instances registered under arbitrary
+// names (brandjet, forge-stack, snoooz, …). Three tiers, cheapest first:
+//   1. exact name in DENYLIST;
+//   2. spec heuristics — any command/arg mentioning code-mode/code_mode
+//      (repo paths, package names, code-mode.env) or the bridge's own
+//      UTCP_CONFIG_FILE / UTCP_CONFIG_PATH env vars;
+//   3. content probe — absolute script paths in command/args are read (≤8MB,
+//      cached) and scanned for the code-mode wire markers every bridge build
+//      contains; a marker-free entry file additionally has its RELATIVE
+//      imports followed one level (unbundled dist/ entries put the tool
+//      registration in a sibling module). Catches forks living in repos
+//      whose path says nothing.
+const BRIDGE_MARKERS = /call_tool_chain|@utcp\/code-mode|CodeModeUtcpClient/;
+const bridgeProbeCache = new Map();
+function readSmallFile(p) {
+  try {
+    const st = statSync(p);
+    if (st.isFile() && st.size <= 8 * 1024 * 1024) return readFileSync(p, "utf8");
+  } catch {
+    /* unreadable/missing — not a signal */
+  }
+  return null;
+}
+function fileLooksLikeBridge(p) {
+  let signature;
+  try {
+    const stat = statSync(p, { bigint: true });
+    signature = `${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeNs}:${stat.ctimeNs}`;
+  } catch {
+    bridgeProbeCache.delete(p);
+    return false;
+  }
+  const cached = bridgeProbeCache.get(p);
+  if (cached?.signature === signature) return cached.hit;
+  const text = readSmallFile(p);
+  const hit = text !== null && BRIDGE_MARKERS.test(text);
+  bridgeProbeCache.set(p, { signature, hit });
+  return hit;
+}
+function firstProbeFile(paths) {
+  for (const path of paths) {
+    try { if (statSync(path).isFile()) return path; } catch { /* try the next candidate */ }
+  }
+  return null;
+}
+const commonJsFiles = (path) => [path, `${path}.js`, `${path}.json`, `${path}.node`];
+const commonJsIndex = (path) => commonJsFiles(resolvePath(path, "index")).slice(1);
+function commonJsProbePath(path, directoryOnly = false) {
+  // Follow Node's file/main/index order without require.resolve's process-wide
+  // path/package caches or executing modules. Package metadata stays bounded.
+  const file = directoryOnly ? null : firstProbeFile(commonJsFiles(path));
+  if (file) return file;
+  const metadata = readSmallFile(resolvePath(path, "package.json"));
+  if (metadata !== null) {
+    let main;
+    try { main = JSON.parse(metadata.replace(/^\uFEFF/, ""))?.main; } catch { return null; }
+    if (typeof main === "string" && main) {
+      const target = resolvePath(path, main);
+      const entry = firstProbeFile([...commonJsFiles(target), ...commonJsIndex(target)]);
+      if (entry) return entry;
+    }
+  }
+  return firstProbeFile(commonJsIndex(path));
+}
+function scriptLooksLikeBridge(p) {
+  if (fileLooksLikeBridge(p)) return true;
+  const text = readSmallFile(p);
+  if (text === null) return false;
+  // Node normally resolves the entry symlink, but preserve-symlinks modes can
+  // retain its logical location. Conservatively guard either interpretation.
+  const entryPaths = new Set([p]);
+  try { entryPaths.add(realpathSync(p)); } catch { /* the file may have disappeared */ }
+  for (const { specifier, commonjs } of relativeImports(text)) {
+    const directoryOnly = /(?:^|[\\/])\.\.?$|[\\/]$/.test(specifier);
+    for (const entry of entryPaths) {
+      let candidate;
+      try {
+        candidate = commonjs
+          ? commonJsProbePath(resolvePath(dirname(entry), specifier), directoryOnly)
+          : fileURLToPath(new URL(specifier, pathToFileURL(entry)));
+      } catch { continue; /* invalid file URLs cannot identify a loadable module */ }
+      if (candidate && fileLooksLikeBridge(candidate)) return true;
+    }
+  }
+  return false;
+}
+
+export function isCodeModeBridge(name, server = {}) {
+  if (DENYLIST.has(name)) return true;
+  const tokens = [server.command, ...(Array.isArray(server.args) ? server.args : [])].filter(
+    (t) => typeof t === "string"
+  );
+  if (tokens.some((t) => /code[-_]mode/i.test(t))) return true;
+  const env = server.env && typeof server.env === "object" ? server.env : {};
+  if ("UTCP_CONFIG_FILE" in env || "UTCP_CONFIG_PATH" in env) return true;
+  for (const t of tokens) {
+    if (isAbsolute(t) && scriptLooksLikeBridge(t)) return true;
+  }
+  return false;
+}
 
 function wrap(name, spec) {
   return {
@@ -77,8 +183,14 @@ export function harvestSecrets(manualName, { env = {}, headers = {} } = {}) {
 // stdio wrapper for OAuth-gated endpoints, which UTCP's header-only http
 // transport cannot authenticate against.
 export function convertServer(name, server, opts = {}) {
-  if (DENYLIST.has(name)) {
-    return { ok: false, risk: "manual", reason: "code-mode bridge — must not be federated into itself", harvested: [] };
+  if (isCodeModeBridge(name, server)) {
+    return {
+      ok: false,
+      bridge: true,
+      risk: "manual",
+      reason: "code-mode bridge (auto-detected) — must not be federated into itself, never stripped",
+      harvested: []
+    };
   }
   if (server.command && !server.url) {
     const { env, harvested } = harvestSecrets(name, { env: server.env ?? {} });

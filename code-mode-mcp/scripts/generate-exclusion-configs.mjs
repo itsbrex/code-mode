@@ -30,7 +30,12 @@ import { promises as fs } from "fs";
 import path from "path";
 import process from "process";
 
+import { ensureSecretEnv } from "./lib/secret-env.mjs";
 import { resolveConfigPath, discoverManuals } from "./lib/utcp-config.mjs";
+
+// Re-exec under `op run --env-file configs/code-mode.env` when available, so
+// discovery sees the same secrets as the live bridge.
+ensureSecretEnv();
 
 const OUTPUT_DIR_NAME = "configs";
 const OUTPUT_FILES = {

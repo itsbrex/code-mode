@@ -56,12 +56,16 @@
   "engines": {
     "node": ">=22"
   },
+  "overrides": {
+    "qs": "6.16.0"
+  },
   "devDependencies": {
     "@types/node": "^20.0.0",
     "tsx": "^4.22.4",
     "typescript": "^5.0.0"
   },
   "dependencies": {
+    "@babel/parser": "7.29.7",
     "@clack/prompts": "^0.7.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@utcp/cli": "^1.1.1",
@@ -82,5 +86,10 @@
   ],
   "bundleDependencies": [
     "@utcp/mcp"
-  ]
+  ],
+  "allowScripts": {
+    "esbuild@0.28.1": true,
+    "fsevents@2.3.3": true,
+    "isolated-vm@6.0.2": true
+  }
 }

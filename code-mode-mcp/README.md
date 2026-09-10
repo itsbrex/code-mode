@@ -377,4 +377,11 @@ npm start       # node dist/index.js (stdio transport)
 | `config-builder` | Interactive exclusion dashboard. `config-builder:no-open` skips opening a browser; `config-builder:legacy` serves the previous UI. |
 | `generate-exclusion-configs` | Write full denylist / allowlist configs to `./configs/`. |
 | `host-import` | Migrate MCP servers from host configs into the UTCP config. |
+| `parity` | Register every manual and report per-manual tool counts; `--save` / `--baseline` snapshot and diff. Exits 1 on lost namespaces or failed registrations. |
 | `dev:register` / `dev:unregister` | Register / remove a local dev build against Claude Code. |
+
+`parity`, `config-builder`, and `generate-exclusion-configs` re-exec themselves
+under `op run --env-file configs/code-mode.env` when that file exists and the
+1Password CLI is on `PATH`, so bare invocations resolve the same secrets (and
+`NODE_EXTRA_CA_CERTS`) as the live bridge. Override the file with
+`CODE_MODE_ENV_FILE=<path>`; skip the wrapper with `CODE_MODE_NO_OP=1`.
