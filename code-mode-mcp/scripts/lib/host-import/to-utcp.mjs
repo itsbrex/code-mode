@@ -19,7 +19,7 @@ export const DENYLIST = new Set(["code-mode", "code-mode-mcp", "attio-code-mode"
 //      registration in a sibling module). Catches forks living in repos
 //      whose path says nothing.
 const BRIDGE_MARKERS = /call_tool_chain|@utcp\/code-mode|CodeModeUtcpClient/;
-const RELATIVE_SPEC = /\b(?:from\s+|import\s*(?:\(\s*)?|(require)\s*\(\s*)["'](\.\.?\/[^"']+)["']/g;
+const RELATIVE_SPEC = /\b(?:from\s+|import\s*(?:\(\s*)?|(require)\s*\(\s*)["'](\.\.?(?:\/[^"']*)?)["']/g;
 const bridgeProbeCache = new Map();
 function readSmallFile(p) {
   try {
@@ -63,8 +63,7 @@ function commonJsProbePath(path, directoryOnly = false) {
   if (metadata !== null) {
     let main;
     try { main = JSON.parse(metadata)?.main; } catch { return null; }
-    if (main) {
-      if (typeof main !== "string") return null;
+    if (typeof main === "string" && main) {
       const target = resolvePath(path, main);
       const entry = firstProbeFile([...commonJsFiles(target), ...commonJsIndex(target)]);
       if (entry) return entry;
@@ -80,7 +79,8 @@ function scriptLooksLikeBridge(p) {
   for (const m of text.matchAll(RELATIVE_SPEC)) {
     if (++followed > 16) break;
     const relative = resolvePath(dirname(p), m[2]);
-    const candidate = m[1] ? commonJsProbePath(relative, /[\\/]$/.test(m[2])) : relative;
+    const directoryOnly = /(?:^|[\\/])\.\.?$|[\\/]$/.test(m[2]);
+    const candidate = m[1] ? commonJsProbePath(relative, directoryOnly) : relative;
     if (candidate && fileLooksLikeBridge(candidate)) return true;
   }
   return false;

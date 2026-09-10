@@ -103,6 +103,42 @@ test("CommonJS bridge probing honors file priority and fresh package metadata", 
   assert.equal(isCodeModeBridge("fixture", spec), true, "package entrypoint replacement must not use the Node resolver cache");
 });
 
+test("CommonJS probing uses directory index for non-string package main values", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "brdg-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const entry = join(root, "entry.cjs");
+  mkdirSync(join(root, "folder"));
+  writeFileSync(join(root, "folder", "index.js"), 'registerTool("call_tool_chain");');
+  writeFileSync(entry, 'require("./folder");');
+  for (const main of [3, true, {}, [], null, false, 0]) {
+    writeFileSync(join(root, "folder", "package.json"), JSON.stringify({ main }));
+    assert.equal(isCodeModeBridge("fixture", { command: "node", args: [entry] }), true, JSON.stringify(main));
+  }
+});
+
+test("CommonJS probing preserves terminal dot-segment directory intent", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "brdg-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const entry = join(root, "entry.cjs");
+  mkdirSync(join(root, "folder", "child"), { recursive: true });
+  writeFileSync(join(root, "folder.js"), 'module.exports = "plain";');
+  writeFileSync(join(root, "folder", "index.js"), 'registerTool("call_tool_chain");');
+  for (const relative of ["./folder/.", "./folder/child/.."]) {
+    writeFileSync(entry, `require(${JSON.stringify(relative)});`);
+    assert.equal(isCodeModeBridge("fixture", { command: "node", args: [entry] }), true, relative);
+  }
+  writeFileSync(join(root, "index.js"), 'registerTool("call_tool_chain");');
+  for (const relative of [".", "./"]) {
+    writeFileSync(entry, `require(${JSON.stringify(relative)});`);
+    assert.equal(isCodeModeBridge("fixture", { command: "node", args: [entry] }), true, relative);
+  }
+  const childEntry = join(root, "folder", "entry.cjs");
+  for (const relative of ["..", "../"]) {
+    writeFileSync(childEntry, `require(${JSON.stringify(relative)});`);
+    assert.equal(isCodeModeBridge("fixture", { command: "node", args: [childEntry] }), true, relative);
+  }
+});
+
 test("bridge probing observes replacements of entries and imported modules", (t) => {
   const root = mkdtempSync(join(tmpdir(), "brdg-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
