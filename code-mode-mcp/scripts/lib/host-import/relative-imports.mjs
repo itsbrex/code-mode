@@ -6,6 +6,15 @@ function literalValue(node) {
   return null;
 }
 
+function isRequire(node) {
+  if (node?.type === "Identifier") return node.name === "require";
+  if (!["MemberExpression", "OptionalMemberExpression"].includes(node?.type) ||
+      node.object?.type !== "Identifier" || node.object.name !== "module") return false;
+  return node.computed
+    ? literalValue(node.property) === "require"
+    : node.property?.type === "Identifier" && node.property.name === "require";
+}
+
 /** Read literal JavaScript/TypeScript imports without evaluating source code. */
 export function relativeImports(source) {
   let ast;
@@ -32,7 +41,7 @@ export function relativeImports(source) {
       value = literalValue(node.source);
     } else if (node.type === "ImportExpression") {
       value = literalValue(node.source);
-    } else if (["CallExpression", "OptionalCallExpression"].includes(node.type) && node.callee?.type === "Identifier" && node.callee.name === "require") {
+    } else if (["CallExpression", "OptionalCallExpression"].includes(node.type) && isRequire(node.callee)) {
       value = literalValue(node.arguments[0]);
       commonjs = true;
     } else if (node.type === "TSImportEqualsDeclaration" && node.importKind !== "type" && node.moduleReference?.type === "TSExternalModuleReference") {

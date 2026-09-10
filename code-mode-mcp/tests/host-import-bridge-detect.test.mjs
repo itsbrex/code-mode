@@ -91,6 +91,32 @@ test("bridge probing ignores comment/string decoys and evaluated template import
   }
 });
 
+test("bridge probing pins literal module.require delegates without evaluating member names", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "brdg-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const entry = join(root, "entry.cjs");
+  writeFileSync(join(root, "bridge.js"), 'throw new Error("must not execute"); // call_tool_chain');
+  const server = { command: "node", args: [entry] };
+  for (const source of [
+    'module.require("./bridge");', 'module /* comment */ . require(`./bridge`);',
+    'module["require"]("./bridge");', 'module[`require`]("./bridge");',
+    'module?.require?.("./bridge");', 'module?.["require"]("./bridge");',
+  ]) {
+    writeFileSync(entry, source);
+    const { items } = buildPlan([{ host: "claude-code", scope: "global", name: "fixture", server }], { manual_call_templates: [] }, []);
+    assert.equal(items[0].bridge, true, source);
+    assert.equal(items[0].manual, undefined, source);
+  }
+  for (const source of [
+    'other.require("./bridge");', 'module[method]("./bridge");',
+    'module["re" + "quire"]("./bridge");', '// module.require("./bridge");',
+    `const example = ${JSON.stringify('module.require("./bridge")')};`,
+  ]) {
+    writeFileSync(entry, source);
+    assert.equal(isCodeModeBridge("fixture", server), false, source);
+  }
+});
+
 test("ESM bridge imports use URL path semantics without changing CommonJS paths", (t) => {
   const root = mkdtempSync(join(tmpdir(), "brdg-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
