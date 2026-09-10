@@ -141,6 +141,9 @@ them are refused server-side even when their name matches a federated manual.
 Relative imports include side-effect imports, literal dynamic imports, and
 CommonJS `require` calls. Replacing an entry or imported module invalidates its
 cached bridge result on the next scan.
+Relative CommonJS calls also resolve extensionless files, package `main`, and
+directory index files in Node's file/main/index order. Resolution reads bounded
+metadata afresh without executing modules or retaining Node's resolver caches.
 
 ## What it does NOT do
 - It does not import code-mode bridges into themselves (denylisted or

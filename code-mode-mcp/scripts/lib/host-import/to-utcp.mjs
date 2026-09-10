@@ -19,7 +19,7 @@ export const DENYLIST = new Set(["code-mode", "code-mode-mcp", "attio-code-mode"
 //      registration in a sibling module). Catches forks living in repos
 //      whose path says nothing.
 const BRIDGE_MARKERS = /call_tool_chain|@utcp\/code-mode|CodeModeUtcpClient/;
-const RELATIVE_SPEC = /\b(?:from\s+|import\s*(?:\(\s*)?|require\s*\(\s*)["'](\.\.?\/[^"']+)["']/g;
+const RELATIVE_SPEC = /\b(?:from\s+|import\s*(?:\(\s*)?|(require)\s*\(\s*)["'](\.\.?\/[^"']+)["']/g;
 const bridgeProbeCache = new Map();
 function readSmallFile(p) {
   try {
@@ -46,6 +46,32 @@ function fileLooksLikeBridge(p) {
   bridgeProbeCache.set(p, { signature, hit });
   return hit;
 }
+function firstProbeFile(paths) {
+  for (const path of paths) {
+    try { if (statSync(path).isFile()) return path; } catch { /* try the next candidate */ }
+  }
+  return null;
+}
+const commonJsFiles = (path) => [path, `${path}.js`, `${path}.json`, `${path}.node`];
+const commonJsIndex = (path) => commonJsFiles(resolvePath(path, "index")).slice(1);
+function commonJsProbePath(path, directoryOnly = false) {
+  // Follow Node's file/main/index order without require.resolve's process-wide
+  // path/package caches or executing modules. Package metadata stays bounded.
+  const file = directoryOnly ? null : firstProbeFile(commonJsFiles(path));
+  if (file) return file;
+  const metadata = readSmallFile(resolvePath(path, "package.json"));
+  if (metadata !== null) {
+    let main;
+    try { main = JSON.parse(metadata)?.main; } catch { return null; }
+    if (main) {
+      if (typeof main !== "string") return null;
+      const target = resolvePath(path, main);
+      const entry = firstProbeFile([...commonJsFiles(target), ...commonJsIndex(target)]);
+      if (entry) return entry;
+    }
+  }
+  return firstProbeFile(commonJsIndex(path));
+}
 function scriptLooksLikeBridge(p) {
   if (fileLooksLikeBridge(p)) return true;
   const text = readSmallFile(p);
@@ -53,7 +79,9 @@ function scriptLooksLikeBridge(p) {
   let followed = 0;
   for (const m of text.matchAll(RELATIVE_SPEC)) {
     if (++followed > 16) break;
-    if (fileLooksLikeBridge(resolvePath(dirname(p), m[1]))) return true;
+    const relative = resolvePath(dirname(p), m[2]);
+    const candidate = m[1] ? commonJsProbePath(relative, /[\\/]$/.test(m[2])) : relative;
+    if (candidate && fileLooksLikeBridge(candidate)) return true;
   }
   return false;
 }

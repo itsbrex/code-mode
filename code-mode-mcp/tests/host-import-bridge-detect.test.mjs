@@ -60,6 +60,49 @@ test("bridge probing follows bare, dynamic, and CommonJS relative imports", (t) 
   }
 });
 
+test("CommonJS bridge probing resolves extensionless files and directory entrypoints without execution", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "brdg-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const entry = join(root, "entry.cjs");
+  const marker = 'throw new Error("probe must not execute modules"); // call_tool_chain';
+  writeFileSync(join(root, "bridge.js"), marker);
+  mkdirSync(join(root, "folder"));
+  writeFileSync(join(root, "folder", "index.js"), marker);
+  mkdirSync(join(root, "package", "lib"), { recursive: true });
+  writeFileSync(join(root, "package", "package.json"), JSON.stringify({ main: "lib/start" }));
+  writeFileSync(join(root, "package", "lib", "start.js"), marker);
+  mkdirSync(join(root, "directory-main", "lib"), { recursive: true });
+  writeFileSync(join(root, "directory-main", "package.json"), JSON.stringify({ main: "lib" }));
+  writeFileSync(join(root, "directory-main", "lib", "index.js"), marker);
+  for (const relative of ["./bridge", "./folder", "./package", "./directory-main"]) {
+    writeFileSync(entry, `require(${JSON.stringify(relative)});`);
+    assert.equal(isCodeModeBridge("fixture", { command: "node", args: [entry] }), true, relative);
+  }
+});
+
+test("CommonJS bridge probing honors file priority and fresh package metadata", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "brdg-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const entry = join(root, "entry.cjs");
+  const spec = { command: "node", args: [entry] };
+  mkdirSync(join(root, "folder"));
+  writeFileSync(join(root, "folder.js"), 'module.exports = "plain";');
+  writeFileSync(join(root, "folder", "index.js"), 'registerTool("call_tool_chain");');
+  writeFileSync(entry, 'require("./folder");');
+  assert.equal(isCodeModeBridge("fixture", spec), false, "an existing .js file wins over the directory");
+  writeFileSync(entry, 'require("./folder/");');
+  assert.equal(isCodeModeBridge("fixture", spec), true, "a trailing slash selects the directory");
+  writeFileSync(entry, 'require("./folder");');
+  rmSync(join(root, "folder.js"));
+  assert.equal(isCodeModeBridge("fixture", spec), true);
+  const packagePath = join(root, "folder", "package.json");
+  writeFileSync(join(root, "folder", "plain.js"), 'module.exports = "plain";');
+  writeFileSync(packagePath, JSON.stringify({ main: "plain.js" }));
+  assert.equal(isCodeModeBridge("fixture", spec), false);
+  writeFileSync(packagePath, JSON.stringify({ main: "index.js" }));
+  assert.equal(isCodeModeBridge("fixture", spec), true, "package entrypoint replacement must not use the Node resolver cache");
+});
+
 test("bridge probing observes replacements of entries and imported modules", (t) => {
   const root = mkdtempSync(join(tmpdir(), "brdg-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
