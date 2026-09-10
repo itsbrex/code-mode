@@ -101,11 +101,16 @@ sources you trust.
 
 ### Patched dependency
 
-`@utcp/mcp` is pinned to `1.1.3` and bundled, and `postinstall` / `prepack` run
-`scripts/apply-mcp-patch.mjs` to apply `patches/@utcp+mcp+1.1.3.patch`. The
-patch dereferences `$ref` schemas and normalizes boolean JSON Schemas, so a
-single non-object sub-schema cannot fail an entire manual's registration. Drop
-the patch once the fix ships upstream.
+`@utcp/mcp` is pinned to `1.1.7` and bundled. `postinstall` / `prepack` run
+`scripts/apply-mcp-patch.mjs` to apply and verify `patches/@utcp+mcp+1.1.7.patch`.
+Upstream now handles circular references and child stderr. The remaining patch
+normalizes boolean schemas, including shared definitions, and preserves this
+bridge's content-block priority and structured-only result shape. Removing it
+requires the public registration/call tests and packed-install tests to pass
+without it; a merged upstream PR alone is insufficient.
+
+The TypeScript library and installed bridge/CLI use Code Mode `1.2.13`, which
+releases hung tool calls when their chain ends and preserves memory-limit errors.
 
 ## Disabling tools per manual
 

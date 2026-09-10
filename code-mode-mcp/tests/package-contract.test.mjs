@@ -31,7 +31,7 @@ test("Local Bridge package is private, installable, and internally consistent", 
   assert.equal(manifest.scripts["plan:no-open"], undefined);
   assert.equal(manifest.files.includes("patches/**/*"), true);
   assert.equal(manifest.files.includes("scripts/**/*"), true);
-  assert.equal(manifest.dependencies["@utcp/mcp"], "1.1.3");
+  assert.equal(manifest.dependencies["@utcp/mcp"], "1.1.7");
   assert.deepEqual(manifest.bundledDependencies, ["@utcp/mcp"]);
 });
 

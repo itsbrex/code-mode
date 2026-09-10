@@ -1,0 +1,160 @@
+diff --git a/node_modules/@utcp/mcp/dist/index.cjs b/node_modules/@utcp/mcp/dist/index.cjs
+--- a/node_modules/@utcp/mcp/dist/index.cjs
++++ b/node_modules/@utcp/mcp/dist/index.cjs
+@@ -4268,22 +4268,47 @@
+    * @returns The dereferenced schema with all references inlined
+    */
+   async _dereferenceSchema(schema) {
+-    if (!schema || typeof schema !== "object") {
+-      return schema;
+-    }
++    if (!schema || typeof schema !== "object") return schema;
++    let resolved = schema;
+     try {
+       const schemaStr = JSON.stringify(schema);
+-      if (!schemaStr.includes("$defs") && !schemaStr.includes("$ref")) {
+-        return schema;
+-      }
+-      const dereferenced = await import_json_schema_ref_parser.default.dereference(schema, {
+-        dereference: { circular: "ignore" }
+-      });
+-      return dereferenced;
++      if (schemaStr.includes("$defs") || schemaStr.includes("$ref")) {
++        resolved = await $RefParser.dereference(schema, {
++          dereference: { circular: "ignore" }
++        });
++      }
+     } catch (error) {
+       this._logError(`Failed to dereference schema, using original:`, error.message);
+-      return schema;
+-    }
++    }
++    return this._normalizeBooleanSchemas(resolved, new WeakMap());
++  }
++  // UTCP schema positions require objects after MCP $refs are resolved.
++  // Cache clones so shared definitions receive the same normalized schema.
++  _normalizeBooleanSchemas(node, seen) {
++    const toSchema = (value) => value === true ? {} : value === false ? { not: {} } : this._normalizeBooleanSchemas(value, seen);
++    if (!node || typeof node !== "object") return node;
++    if (seen.has(node)) return seen.get(node);
++    const out = Array.isArray(node) ? [] : {};
++    seen.set(node, out);
++    if (Array.isArray(node)) {
++      for (const value of node) out.push(this._normalizeBooleanSchemas(value, seen));
++      return out;
++    }
++    const schemaMaps = ["properties", "patternProperties", "definitions", "$defs", "dependentSchemas"];
++    const schemaValues = ["items", "additionalItems", "additionalProperties", "unevaluatedProperties", "unevaluatedItems", "not", "if", "then", "else", "contains", "propertyNames"];
++    const schemaLists = ["allOf", "anyOf", "oneOf", "prefixItems"];
++    for (const [key, value] of Object.entries(node)) {
++      if (schemaMaps.includes(key) && value && typeof value === "object" && !Array.isArray(value)) {
++        out[key] = Object.fromEntries(Object.entries(value).map(([name, schema]) => [name, toSchema(schema)]));
++      } else if (schemaValues.includes(key)) {
++        out[key] = Array.isArray(value) ? value.map(toSchema) : toSchema(value);
++      } else if (schemaLists.includes(key) && Array.isArray(value)) {
++        out[key] = value.map(toSchema);
++      } else {
++        out[key] = this._normalizeBooleanSchemas(value, seen);
++      }
++    }
++    return out;
+   }
+   /**
+    * Close a session and drop it from the cache — identity-aware. Pass
+@@ -4711,11 +4736,12 @@
+   }
+   _processMcpToolResult(result) {
+     if (result && typeof result === "object") {
+-      if (result.structuredContent != null) {
+-        return this._unwrapStructuredContent(result.structuredContent);
+-      }
+-      if (result.structured_output != null) {
++      if ("structured_output" in result) {
+         return result.structured_output;
++      }
++      const hasContent = Array.isArray(result.content) && result.content.length > 0;
++      if (!hasContent && result.structuredContent != null) {
++        return result.structuredContent;
+       }
+       if (Array.isArray(result.content)) {
+         const processedList = result.content.map((item) => {
+diff --git a/node_modules/@utcp/mcp/dist/index.js b/node_modules/@utcp/mcp/dist/index.js
+--- a/node_modules/@utcp/mcp/dist/index.js
++++ b/node_modules/@utcp/mcp/dist/index.js
+@@ -4233,22 +4233,47 @@
+    * @returns The dereferenced schema with all references inlined
+    */
+   async _dereferenceSchema(schema) {
+-    if (!schema || typeof schema !== "object") {
+-      return schema;
+-    }
++    if (!schema || typeof schema !== "object") return schema;
++    let resolved = schema;
+     try {
+       const schemaStr = JSON.stringify(schema);
+-      if (!schemaStr.includes("$defs") && !schemaStr.includes("$ref")) {
+-        return schema;
+-      }
+-      const dereferenced = await $RefParser.dereference(schema, {
+-        dereference: { circular: "ignore" }
+-      });
+-      return dereferenced;
++      if (schemaStr.includes("$defs") || schemaStr.includes("$ref")) {
++        resolved = await $RefParser.dereference(schema, {
++          dereference: { circular: "ignore" }
++        });
++      }
+     } catch (error) {
+       this._logError(`Failed to dereference schema, using original:`, error.message);
+-      return schema;
+-    }
++    }
++    return this._normalizeBooleanSchemas(resolved, new WeakMap());
++  }
++  // UTCP schema positions require objects after MCP $refs are resolved.
++  // Cache clones so shared definitions receive the same normalized schema.
++  _normalizeBooleanSchemas(node, seen) {
++    const toSchema = (value) => value === true ? {} : value === false ? { not: {} } : this._normalizeBooleanSchemas(value, seen);
++    if (!node || typeof node !== "object") return node;
++    if (seen.has(node)) return seen.get(node);
++    const out = Array.isArray(node) ? [] : {};
++    seen.set(node, out);
++    if (Array.isArray(node)) {
++      for (const value of node) out.push(this._normalizeBooleanSchemas(value, seen));
++      return out;
++    }
++    const schemaMaps = ["properties", "patternProperties", "definitions", "$defs", "dependentSchemas"];
++    const schemaValues = ["items", "additionalItems", "additionalProperties", "unevaluatedProperties", "unevaluatedItems", "not", "if", "then", "else", "contains", "propertyNames"];
++    const schemaLists = ["allOf", "anyOf", "oneOf", "prefixItems"];
++    for (const [key, value] of Object.entries(node)) {
++      if (schemaMaps.includes(key) && value && typeof value === "object" && !Array.isArray(value)) {
++        out[key] = Object.fromEntries(Object.entries(value).map(([name, schema]) => [name, toSchema(schema)]));
++      } else if (schemaValues.includes(key)) {
++        out[key] = Array.isArray(value) ? value.map(toSchema) : toSchema(value);
++      } else if (schemaLists.includes(key) && Array.isArray(value)) {
++        out[key] = value.map(toSchema);
++      } else {
++        out[key] = this._normalizeBooleanSchemas(value, seen);
++      }
++    }
++    return out;
+   }
+   /**
+    * Close a session and drop it from the cache — identity-aware. Pass
+@@ -4676,11 +4701,12 @@
+   }
+   _processMcpToolResult(result) {
+     if (result && typeof result === "object") {
+-      if (result.structuredContent != null) {
+-        return this._unwrapStructuredContent(result.structuredContent);
+-      }
+-      if (result.structured_output != null) {
++      if ("structured_output" in result) {
+         return result.structured_output;
++      }
++      const hasContent = Array.isArray(result.content) && result.content.length > 0;
++      if (!hasContent && result.structuredContent != null) {
++        return result.structuredContent;
+       }
+       if (Array.isArray(result.content)) {
+         const processedList = result.content.map((item) => {

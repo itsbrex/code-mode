@@ -49,12 +49,12 @@
   "dependencies": {
     "@utcp/sdk": "^1.1.2",
     "@utcp/http": "^1.1.11",
-    "@utcp/mcp": "^1.1.3",
+    "@utcp/mcp": "^1.1.7",
     "@utcp/cli": "^1.1.1",
     "@utcp/text": "^1.1.0",
     "@utcp/file": "^1.1.0",
     "@utcp/dotenv-loader": "^1.1.0",
-    "@utcp/code-mode": "^1.2.12",
+    "@utcp/code-mode": "^1.2.13",
     "@modelcontextprotocol/sdk": "^1.17.4",
     "isolated-vm": "^6.0.0",
     "dotenv": "^16.0.0"

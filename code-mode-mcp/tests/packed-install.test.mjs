@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import {
   mkdtempSync,
+  mkdirSync,
   readFileSync,
   readdirSync,
   writeFileSync
@@ -53,7 +54,7 @@ test("packed Local Bridge installs with runtime files and required MCP patch", (
   for (const required of [
     "package/dist/index.js",
     "package/dist/config-path.mjs",
-    "package/patches/@utcp+mcp+1.1.3.patch",
+    "package/patches/@utcp+mcp+1.1.7.patch",
     "package/scripts/apply-mcp-patch.mjs",
     "package/scripts/host-import-cli.mjs"
   ]) {
@@ -90,5 +91,26 @@ test("packed Local Bridge installs with runtime files and required MCP patch", (
     assert.match(patchedMcp, /circular: "ignore"/);
     assert.match(patchedMcp, /UTCP_MCP_CHILD_STDERR/);
     assert.match(patchedMcp, /result\.structuredContent != null/);
+    assert.match(patchedMcp, /_normalizeBooleanSchemas/);
+    assert.match(patchedMcp, /!hasContent && result\.structuredContent != null/);
+  }
+
+  // Exercise the installed dependency through real MCP registration and calls.
+  // Tests run inside the installed package so imports cannot use the source tree.
+  const compatibilityRoot = join(installedRoot, ".compatibility-tests");
+  mkdirSync(join(compatibilityRoot, "fixtures"), { recursive: true });
+  writeFileSync(
+    join(compatibilityRoot, "adapter.test.mjs"),
+    readFileSync(join(projectRoot, "tests", "mcp-adapter-compat.test.mjs"))
+  );
+  writeFileSync(
+    join(compatibilityRoot, "fixtures", "adapter-compat-server.mjs"),
+    readFileSync(join(projectRoot, "tests", "fixtures", "adapter-compat-server.mjs"))
+  );
+  for (const format of ["esm", "cjs"]) {
+    run(process.execPath, ["--test", join(compatibilityRoot, "adapter.test.mjs")], {
+      cwd: installedRoot,
+      env: { ...installEnvironment, MCP_COMPAT_FORMAT: format }
+    });
   }
 });
