@@ -19,7 +19,7 @@ export const DENYLIST = new Set(["code-mode", "code-mode-mcp", "attio-code-mode"
 //      registration in a sibling module). Catches forks living in repos
 //      whose path says nothing.
 const BRIDGE_MARKERS = /call_tool_chain|@utcp\/code-mode|CodeModeUtcpClient/;
-const RELATIVE_SPEC = /(?:from\s+|require\()\s*["'](\.\.?\/[^"']+)["']/g;
+const RELATIVE_SPEC = /\b(?:from\s+|import\s*(?:\(\s*)?|require\s*\(\s*)["'](\.\.?\/[^"']+)["']/g;
 const bridgeProbeCache = new Map();
 function readSmallFile(p) {
   try {
@@ -31,10 +31,19 @@ function readSmallFile(p) {
   return null;
 }
 function fileLooksLikeBridge(p) {
-  if (bridgeProbeCache.has(p)) return bridgeProbeCache.get(p);
+  let signature;
+  try {
+    const stat = statSync(p, { bigint: true });
+    signature = `${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeNs}:${stat.ctimeNs}`;
+  } catch {
+    bridgeProbeCache.delete(p);
+    return false;
+  }
+  const cached = bridgeProbeCache.get(p);
+  if (cached?.signature === signature) return cached.hit;
   const text = readSmallFile(p);
   const hit = text !== null && BRIDGE_MARKERS.test(text);
-  bridgeProbeCache.set(p, hit);
+  bridgeProbeCache.set(p, { signature, hit });
   return hit;
 }
 function scriptLooksLikeBridge(p) {

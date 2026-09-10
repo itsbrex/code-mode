@@ -2099,7 +2099,7 @@ function wireResizer(){
 const HOST_LABEL = { "claude-code": "Claude Code", "claude-desktop": "Claude Desktop", codex: "Codex" };
 const hi = { items: [], pins: [], sources: {}, selected: new Set(), expanded: new Set(),
   query: "", sortField: "name", sortDir: "asc", loaded: false, busy: false };
-const hiKey = it => `${it.host}|${it.scope}|${it.projectKey || ""}|${it.name}`;
+const hiKey = it => JSON.stringify([it.host, it.scope === "project" ? "project" : "global", it.projectKey || "", it.name]);
 /* Search matches the visible row AND the underlying configs, so "docker" or a
    URL fragment finds the servers that use it even before expanding anything. */
 function hiMatches(it){

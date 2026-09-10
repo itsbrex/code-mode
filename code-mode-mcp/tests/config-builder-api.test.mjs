@@ -54,4 +54,46 @@ test("local HTTP boundary rejects rebound requests and imports the selected proj
   const hosts = JSON.parse(readFileSync(ctx.hostPaths.claudeCode, "utf8"));
   assert.ok(hosts.projects["/fixture/a"].mcpServers.memory);
   assert.deepEqual(hosts.projects["/fixture/b"].mcpServers, {});
+
+  writeFileSync(ctx.hostPaths.claudeCode, JSON.stringify({ projects: {
+    "/fixture/x|foo": { mcpServers: { bar: { command: "fixture-first" } } },
+    "/fixture/x": { mcpServers: { "foo|bar": { command: "fixture-second" } } }
+  } }));
+  const collisionPlan = await request("/api/host-plan");
+  const first = collisionPlan.body.items.find((item) => item.name === "bar");
+  const collisionResult = await request("/api/host-apply", { method: "POST", headers, body: { selections: [first] } });
+  assert.deepEqual(collisionResult.body.added, ["bar"], "delimiter-like names must not import an unselected row");
+  assert.deepEqual(JSON.parse(readFileSync(ctx.configPath, "utf8")).manual_call_templates.map((manual) => manual.name).sort(), ["bar", "memory"]);
+});
+
+test("the real config-builder CLI serves an empty configuration on its assigned port", { timeout: 15000 }, async (t) => {
+  const root = mkdtempSync(join(tmpdir(), "empty-config-cli-"));
+  const configPath = join(root, "config.json");
+  writeFileSync(configPath, '{"manual_call_templates":[]}');
+  const child = fork(fileURLToPath(new URL("../scripts/config-builder-server.mjs", import.meta.url)), ["--config", configPath, "--no-open", "--host", "127.0.0.1", "--port", "0"], {
+    cwd: root,
+    execArgv: ["--import", fileURLToPath(new URL("../node_modules/tsx/dist/loader.mjs", import.meta.url))],
+    env: { PATH: process.env.PATH, CODE_MODE_NO_OP: "1" },
+    stdio: ["ignore", "pipe", "pipe", "ipc"]
+  });
+  t.after(() => { child.kill(); rmSync(root, { recursive: true, force: true }); });
+  const url = await new Promise((resolve, reject) => {
+    let output = "";
+    const capture = (chunk) => {
+      output += chunk;
+      const match = output.match(/http:\/\/127\.0\.0\.1:(\d+)\//);
+      if (match) resolve(match[0]);
+    };
+    child.stdout.on("data", capture);
+    child.stderr.on("data", capture);
+    child.once("error", reject);
+    child.once("exit", (code) => reject(new Error(`CLI exited ${code}: ${output}`)));
+  });
+  assert.notEqual(new URL(url).port, "0");
+  const response = await fetch(`${url}api/manifest`);
+  assert.equal(response.status, 200);
+  const manifest = await response.json();
+  assert.deepEqual(manifest.manuals, []);
+  assert.equal(manifest.manualCount, 0);
+  assert.equal(manifest.toolCount, 0);
 });

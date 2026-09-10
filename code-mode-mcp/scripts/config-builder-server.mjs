@@ -93,7 +93,7 @@ function shortNameOf(toolName, manualName) {
 }
 
 async function buildManifest(configPath, onProgress = () => {}) {
-  const { rawConfig, manuals, toolCount } = await discoverManuals(configPath, onProgress);
+  const { rawConfig, manuals, toolCount } = await discoverManuals(configPath, onProgress, { allowEmpty: true });
 
   // Authoritative initial state: reuse the exact matcher the MCP server enforces.
   const { registry } = buildExclusionRegistryFromConfig(rawConfig);
@@ -245,22 +245,23 @@ function hostPlanView(ctx) {
 // legacy `names` keeps first-wins behavior. One manual is imported per name;
 // every host row whose converted manual is IDENTICAL to the imported one is
 // recorded in the provenance sidecar (true duplicates merge, sources kept).
+const hostRowKey = (row) => JSON.stringify([row.host, row.scope === "project" ? "project" : "global", row.projectKey || "", row.name]);
+
 function applyImport(ctx, body) {
   const selections = Array.isArray(body?.selections) ? body.selections : null;
   const names = Array.isArray(body?.names) ? body.names : [];
   const plan = buildHostPlan(ctx);
-  const rowKey = (r) => `${r.host}|${r.scope === "project" ? "project" : "global"}|${r.projectKey || ""}|${r.name}`;
   const chosen = new Map(); // raw server name -> plan item
   if (selections) {
     for (const selection of selections) {
-      const current = selection && plan.items.find((item) => rowKey(item) === rowKey(selection));
+      const current = selection && plan.items.find((item) => hostRowKey(item) === hostRowKey(selection));
       if (!current || selection.configHash !== planItemFingerprint(current)) {
         throw Object.assign(new Error("Source configuration changed; refresh and review the selection again"), { statusCode: 409 });
       }
     }
-    const wantKeys = new Set(selections.filter((s) => s && s.name).map(rowKey));
+    const wantKeys = new Set(selections.filter((s) => s && s.name).map(hostRowKey));
     for (const it of plan.items) {
-      if (!wantKeys.has(rowKey(it)) || it.duplicate || it.pinned || !it.manual) continue;
+      if (!wantKeys.has(hostRowKey(it)) || it.duplicate || it.pinned || !it.manual) continue;
       if (!chosen.has(it.name)) chosen.set(it.name, it);
     }
   } else {
@@ -324,7 +325,7 @@ function stripHosts(ctx, entries) {
   // arbitrary names are refused too — a name-only denylist misses them.
   const hostSpecs = new Map(
     readAllHosts(ctx.hostPaths).map((h) => [
-      `${h.host}|${h.scope === "project" ? "project" : "global"}|${h.projectKey || ""}|${h.name}`,
+      hostRowKey(h),
       h.server
     ])
   );
@@ -332,7 +333,7 @@ function stripHosts(ctx, entries) {
   const refused = [];
   for (const e of Array.isArray(entries) ? entries : []) {
     if (!e || typeof e.name !== "string") continue;
-    const specKey = `${e.host}|${e.scope === "project" ? "project" : "global"}|${e.projectKey || ""}|${e.name}`;
+    const specKey = hostRowKey(e);
     if (isCodeModeBridge(e.name, hostSpecs.get(specKey) || {})) {
       refused.push({ name: e.name, reason: "code-mode bridge (auto-detected)" });
       continue;
@@ -346,7 +347,7 @@ function stripHosts(ctx, entries) {
       continue;
     }
     const scope = e.scope === "project" ? "project" : "global";
-    const key = `${e.host}|${scope}|${e.projectKey || ""}`;
+    const key = JSON.stringify([e.host, scope, e.projectKey || ""]);
     if (!groups.has(key)) groups.set(key, { host: e.host, scope, projectKey: e.projectKey || undefined, names: [] });
     groups.get(key).names.push(e.name);
   }
@@ -519,7 +520,7 @@ function listenWithFallback(server, host, startPort, attempts = 25) {
         // Drop the bind-retry handler once listening — a later runtime error
         // must not re-enter listen() on an already-listening server.
         server.removeListener("error", onError);
-        resolve(port);
+        resolve(server.address().port);
       });
     };
 

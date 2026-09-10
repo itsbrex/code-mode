@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
+import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { isCodeModeBridge, convertServer } from "../scripts/lib/host-import/to-utcp.mjs";
@@ -47,6 +47,34 @@ test("isCodeModeBridge: plain servers stay plain", () => {
   assert.equal(isCodeModeBridge("memory", { command: "npx", args: ["-y", "@modelcontextprotocol/server-memory"] }), false);
   assert.equal(isCodeModeBridge("local", { command: "node", args: [entry] }), false);
   assert.equal(isCodeModeBridge("remote", { url: "https://mcp.context7.com/mcp" }), false);
+});
+
+test("bridge probing follows bare, dynamic, and CommonJS relative imports", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "brdg-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const entry = join(root, "entry.mjs");
+  writeFileSync(join(root, "bridge.mjs"), 'registerTool("call_tool_chain");');
+  for (const source of ['import "./bridge.mjs";', 'await import("./bridge.mjs");', 'require ( "./bridge.mjs" );']) {
+    writeFileSync(entry, source);
+    assert.equal(isCodeModeBridge("fixture", { command: "node", args: [entry] }), true, source);
+  }
+});
+
+test("bridge probing observes replacements of entries and imported modules", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "brdg-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const entry = join(root, "entry.mjs");
+  const child = join(root, "child.mjs");
+  const spec = { command: "node", args: [entry] };
+  writeFileSync(entry, 'console.log("plain");');
+  assert.equal(isCodeModeBridge("fixture", spec), false);
+  writeFileSync(entry, 'registerTool("call_tool_chain");');
+  assert.equal(isCodeModeBridge("fixture", spec), true);
+  writeFileSync(entry, 'import { start } from "./child.mjs";');
+  writeFileSync(child, 'export const start = () => {};');
+  assert.equal(isCodeModeBridge("fixture", spec), false);
+  writeFileSync(child, 'registerTool("call_tool_chain");');
+  assert.equal(isCodeModeBridge("fixture", spec), true);
 });
 
 test("convertServer refuses a detected bridge with bridge:true", () => {
