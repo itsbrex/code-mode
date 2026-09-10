@@ -22,7 +22,7 @@ No root package.json — each sub-project is independent (no npm/pnpm workspaces
 
 ### TypeScript Library (`typescript-library/`)
 
-- **Package**: `@utcp/code-mode` v1.2.12
+- **Package**: `@utcp/code-mode` v1.2.13
 - **License**: MPL-2.0
 - **Entry**: `src/index.ts` re-exports `CodeModeUtcpClient` from `src/code_mode_utcp_client.ts`
 - **Build**: `tsup` (outputs ESM + CJS to `dist/`)
@@ -34,7 +34,7 @@ No root package.json — each sub-project is independent (no npm/pnpm workspaces
 cd typescript-library
 npm install
 npm run build    # tsup → dist/
-npm test         # jest (16 test cases)
+npm test         # jest (31 test cases)
 ```
 
 ### Python Library (`python-library/`)
