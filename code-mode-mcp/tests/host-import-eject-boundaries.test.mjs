@@ -192,6 +192,28 @@ test("import and ejection share provenance across real and symlink config paths"
   }
 });
 
+test("config case aliases share provenance only when the filesystem shares the file", (t) => {
+  const opts = fixture(t);
+  const upper = `${opts.utcpPath}.Case.json`;
+  const lower = `${opts.utcpPath}.case.json`;
+  writeFileSync(upper, '{"manual_call_templates":[]}');
+  const caseInsensitive = existsSync(lower);
+  writeFileSync(opts.paths.claudeDesktop, JSON.stringify({ mcpServers: { memory: { command: "fixture-server" } } }));
+  run({ ...opts, utcpPath: upper, apply: true, stripHost: true });
+  if (!caseInsensitive) writeFileSync(lower, JSON.stringify({ manual_call_templates: [manual("memory")] }), { flag: "wx" });
+  const result = run({ ...opts, utcpPath: lower, eject: ["memory"] });
+  assert.deepEqual(result.ejected[0].wroteTo, [caseInsensitive ? "claude-desktop" : "claude-code"]);
+  if (caseInsensitive) {
+    assert.deepEqual(loadSources(opts.sourcesFile, upper), {});
+    assert.deepEqual(JSON.parse(readFileSync(opts.paths.claudeCode, "utf8")).mcpServers, {});
+  } else {
+    assert.equal(loadSources(opts.sourcesFile, upper).memory.sources[0].host, "claude-desktop");
+    assert.equal(JSON.parse(readFileSync(upper, "utf8")).manual_call_templates.length, 1);
+    assert.deepEqual(run({ ...opts, utcpPath: upper, eject: ["memory"] }).ejected[0].wroteTo, ["claude-desktop"]);
+  }
+  assert.equal(JSON.parse(readFileSync(opts.paths.claudeDesktop, "utf8")).mcpServers.memory.command, "fixture-server");
+});
+
 test("existing version-2 alias provenance is consumed through the real config path", (t) => {
   const opts = fixture(t, [manual("memory")]);
   const alias = `${opts.utcpPath}.alias`;

@@ -3,10 +3,11 @@ import { basename, dirname, resolve } from "node:path";
 
 // Resolve existing and dangling aliases without creating anything. lstat keeps
 // a dangling link visible when realpath cannot yet resolve its final target.
+// Native realpath also recovers filesystem spelling for existing case aliases.
 export function canonicalFilePath(file) {
   let current = resolve(file);
   for (let links = 0; links < 40; links += 1) {
-    try { return realpathSync(current); }
+    try { return realpathSync.native(current); }
     catch (error) { if (error.code !== "ENOENT") throw error; }
     const suffix = [];
     let ancestor = current;
@@ -23,7 +24,7 @@ export function canonicalFilePath(file) {
     if (stat.isSymbolicLink()) {
       current = resolve(dirname(ancestor), readlinkSync(ancestor), ...suffix);
     } else {
-      return resolve(realpathSync(ancestor), ...suffix);
+      return resolve(realpathSync.native(ancestor), ...suffix);
     }
   }
   throw new Error("File alias chain exceeds the resolution limit");
