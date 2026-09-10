@@ -94,4 +94,4 @@ Key methods: `create()` (static factory), `callToolChain()` / `call_tool_chain()
 ## Known Issues
 
 - Python timeout handling cannot forcibly terminate blocking code already running in its worker thread.
-- No CI/CD configuration (no GitHub Actions, no Dockerfile).
+- GitHub Actions verifies the private MCP bridge with Linux build/tests/audit and Windows bridge-path tests. TypeScript/Python library CI and container/deployment automation are not configured.
