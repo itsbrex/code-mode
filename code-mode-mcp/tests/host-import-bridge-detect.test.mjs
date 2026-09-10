@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
+import { mkdtempSync, writeFileSync, mkdirSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { isCodeModeBridge, convertServer } from "../scripts/lib/host-import/to-utcp.mjs";
@@ -89,6 +89,48 @@ test("bridge probing ignores comment/string decoys and evaluated template import
     writeFileSync(entry, source);
     assert.equal(isCodeModeBridge("fixture", { command: "node", args: [entry] }), false, source);
   }
+});
+
+test("ESM bridge imports use URL path semantics without changing CommonJS paths", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "brdg-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const entry = join(root, "entry.mjs");
+  writeFileSync(join(root, "bridge.mjs"), 'registerTool("call_tool_chain");');
+  const spec = { command: "node", args: [entry] };
+  for (const relative of ["./bridge.mjs?version=1", "./bridge.mjs#worker", "./%62ridge.mjs?version=1#worker"]) {
+    writeFileSync(entry, `import ${JSON.stringify(relative)};`);
+    assert.equal(isCodeModeBridge("fixture", spec), true, relative);
+  }
+  writeFileSync(entry, 'require("./bridge.mjs?version=1");');
+  assert.equal(isCodeModeBridge("fixture", spec), false, "CommonJS treats the question mark as a filename character");
+  writeFileSync(entry, 'import "./invalid%2Fbridge.mjs";');
+  assert.equal(isCodeModeBridge("fixture", spec), false, "invalid encoded separators do not crash a scan");
+});
+
+test("CommonJS directory metadata accepts the UTF-8 BOM accepted by Node", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "brdg-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const entry = join(root, "entry.cjs");
+  mkdirSync(join(root, "folder"));
+  writeFileSync(join(root, "folder", "package.json"), "\uFEFF" + JSON.stringify({ main: "bridge.js" }));
+  writeFileSync(join(root, "folder", "bridge.js"), 'registerTool("call_tool_chain");');
+  writeFileSync(entry, 'require("./folder");');
+  assert.equal(isCodeModeBridge("fixture", { command: "node", args: [entry] }), true);
+});
+
+test("bridge probing follows the real entry location and preserves logical symlink mode", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "brdg-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  mkdirSync(join(root, "real"));
+  const entry = join(root, "real", "entry.mjs");
+  const link = join(root, "linked.mjs");
+  writeFileSync(entry, 'import "./bridge.mjs";');
+  writeFileSync(join(root, "real", "bridge.mjs"), 'registerTool("call_tool_chain");');
+  symlinkSync(entry, link, "file");
+  assert.equal(isCodeModeBridge("fixture", { command: "node", args: [link] }), true);
+  writeFileSync(join(root, "real", "bridge.mjs"), 'export const plain = true;');
+  writeFileSync(join(root, "bridge.mjs"), 'registerTool("call_tool_chain");');
+  assert.equal(isCodeModeBridge("fixture", { command: "node", args: ["--preserve-symlinks-main", link] }), true);
 });
 
 test("CommonJS bridge probing resolves extensionless files and directory entrypoints without execution", (t) => {

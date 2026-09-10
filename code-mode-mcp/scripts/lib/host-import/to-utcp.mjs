@@ -1,5 +1,6 @@
-import { readFileSync, statSync } from "node:fs";
+import { readFileSync, statSync, realpathSync } from "node:fs";
 import { dirname, isAbsolute, resolve as resolvePath } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { toManualIdentifier } from "../manual-name.mjs";
 import { relativeImports } from "./relative-imports.mjs";
 
@@ -62,7 +63,7 @@ function commonJsProbePath(path, directoryOnly = false) {
   const metadata = readSmallFile(resolvePath(path, "package.json"));
   if (metadata !== null) {
     let main;
-    try { main = JSON.parse(metadata)?.main; } catch { return null; }
+    try { main = JSON.parse(metadata.replace(/^\uFEFF/, ""))?.main; } catch { return null; }
     if (typeof main === "string" && main) {
       const target = resolvePath(path, main);
       const entry = firstProbeFile([...commonJsFiles(target), ...commonJsIndex(target)]);
@@ -75,11 +76,21 @@ function scriptLooksLikeBridge(p) {
   if (fileLooksLikeBridge(p)) return true;
   const text = readSmallFile(p);
   if (text === null) return false;
+  // Node normally resolves the entry symlink, but preserve-symlinks modes can
+  // retain its logical location. Conservatively guard either interpretation.
+  const entryPaths = new Set([p]);
+  try { entryPaths.add(realpathSync(p)); } catch { /* the file may have disappeared */ }
   for (const { specifier, commonjs } of relativeImports(text)) {
-    const relative = resolvePath(dirname(p), specifier);
     const directoryOnly = /(?:^|[\\/])\.\.?$|[\\/]$/.test(specifier);
-    const candidate = commonjs ? commonJsProbePath(relative, directoryOnly) : relative;
-    if (candidate && fileLooksLikeBridge(candidate)) return true;
+    for (const entry of entryPaths) {
+      let candidate;
+      try {
+        candidate = commonjs
+          ? commonJsProbePath(resolvePath(dirname(entry), specifier), directoryOnly)
+          : fileURLToPath(new URL(specifier, pathToFileURL(entry)));
+      } catch { continue; /* invalid file URLs cannot identify a loadable module */ }
+      if (candidate && fileLooksLikeBridge(candidate)) return true;
+    }
   }
   return false;
 }

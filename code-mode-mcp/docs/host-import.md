@@ -149,6 +149,10 @@ cached bridge result on the next scan.
 Relative CommonJS calls also resolve extensionless files, package `main`, and
 directory index files in Node's file/main/index order. Resolution reads bounded
 metadata afresh without executing modules or retaining Node's resolver caches.
+Package metadata accepts Node's UTF-8 BOM spelling. ESM specifiers use file-URL
+semantics for percent escapes, query strings, and fragments; CommonJS paths keep
+their literal filename meaning. Symlinked entrypoints conservatively probe both
+logical and real locations, covering default and preserve-symlink modes.
 
 ## What it does NOT do
 - It does not import code-mode bridges into themselves (denylisted or
