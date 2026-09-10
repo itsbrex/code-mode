@@ -56,7 +56,6 @@ export function ensureSecretEnv() {
     op,
     [
       "run",
-      "--no-masking",
       `--env-file=${envFile}`,
       "--",
       process.execPath,
