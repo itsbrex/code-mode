@@ -56,6 +56,9 @@
   "engines": {
     "node": ">=22"
   },
+  "overrides": {
+    "qs": "6.16.0"
+  },
   "devDependencies": {
     "@types/node": "^20.0.0",
     "tsx": "^4.22.4",

@@ -37,4 +37,6 @@ jobs:
           cache: npm
           cache-dependency-path: code-mode-mcp/package-lock.json
       - run: npm ci
+      - name: Audit dependencies
+        run: npm audit --audit-level=moderate
       - run: npm test
