@@ -20,7 +20,7 @@ diff --git a/node_modules/@utcp/mcp/dist/index.cjs b/node_modules/@utcp/mcp/dist
 -      });
 -      return dereferenced;
 +      if (schemaStr.includes("$defs") || schemaStr.includes("$ref")) {
-+        resolved = await $RefParser.dereference(schema, {
++        resolved = await import_json_schema_ref_parser.default.dereference(schema, {
 +          dereference: { circular: "ignore" }
 +        });
 +      }

@@ -40,7 +40,9 @@ const requiredMarkers = [
 function patchIsInstalled() {
   return ["index.js", "index.cjs"].every((file) => {
     const source = readFileSync(join(dependencyRoot, "dist", file), "utf8");
-    return requiredMarkers.every((marker) => source.includes(marker));
+    const parser = file.endsWith(".cjs") ? "import_json_schema_ref_parser.default" : "$RefParser";
+    return requiredMarkers.every((marker) => source.includes(marker)) &&
+      source.includes(`resolved = await ${parser}.dereference(schema, {`);
   });
 }
 
