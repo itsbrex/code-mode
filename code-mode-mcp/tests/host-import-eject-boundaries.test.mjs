@@ -131,6 +131,47 @@ test("ejection detects dangling destination aliases before either path is create
   }
 });
 
+test("ejection conservatively rejects unresolved case-only destination aliases", (t) => {
+  for (const mixedFormats of [false, true]) {
+    const opts = fixture(t, [manual("first"), manual("second")]);
+    opts.paths.claudeCode = `${opts.utcpPath}.Host.json`;
+    const secondPath = `${opts.utcpPath}.host.json`;
+    if (mixedFormats) opts.paths.codex = secondPath;
+    else opts.paths.claudeDesktop = secondPath;
+    recordSources(opts.sourcesFile, "first", opts.utcpPath, [{ host: "claude-code", scope: "global", name: "shared" }]);
+    recordSources(opts.sourcesFile, "second", opts.utcpPath, [{ host: mixedFormats ? "codex" : "claude-desktop", scope: "global", name: "shared" }]);
+    const files = [opts.utcpPath, opts.sourcesFile];
+    const before = files.map((file) => readFileSync(file, "utf8"));
+    assert.throws(() => run({ ...opts, eject: ["first", "second"] }), /destination collision|Host formats cannot share/);
+    assert.deepEqual(files.map((file) => readFileSync(file, "utf8")), before);
+    assert.equal(existsSync(opts.paths.claudeCode), false);
+    assert.equal(existsSync(secondPath), false);
+    assert.equal(existsSync(opts.backupRoot), false);
+  }
+});
+
+test("existing case-distinct destinations use their actual file identities", (t) => {
+  const opts = fixture(t, [manual("first", { command: "first-server" }), manual("second", { command: "second-server" })]);
+  opts.paths.claudeCode = `${opts.utcpPath}.Host.json`;
+  opts.paths.claudeDesktop = `${opts.utcpPath}.host.json`;
+  writeFileSync(opts.paths.claudeCode, '{"mcpServers":{}}');
+  const caseInsensitive = existsSync(opts.paths.claudeDesktop);
+  if (!caseInsensitive) writeFileSync(opts.paths.claudeDesktop, '{"mcpServers":{}}', { flag: "wx" });
+  recordSources(opts.sourcesFile, "first", opts.utcpPath, [{ host: "claude-code", scope: "global", name: "shared" }]);
+  recordSources(opts.sourcesFile, "second", opts.utcpPath, [{ host: "claude-desktop", scope: "global", name: "shared" }]);
+  if (caseInsensitive) {
+    const files = [opts.utcpPath, opts.paths.claudeCode, opts.sourcesFile];
+    const before = files.map((file) => readFileSync(file, "utf8"));
+    assert.throws(() => run({ ...opts, eject: ["first", "second"] }), /destination collision/);
+    assert.deepEqual(files.map((file) => readFileSync(file, "utf8")), before);
+  } else {
+    const result = run({ ...opts, eject: ["first", "second"] });
+    assert.deepEqual(result.removed, ["first", "second"]);
+    assert.equal(JSON.parse(readFileSync(opts.paths.claudeCode, "utf8")).mcpServers.shared.command, "first-server");
+    assert.equal(JSON.parse(readFileSync(opts.paths.claudeDesktop, "utf8")).mcpServers.shared.command, "second-server");
+  }
+});
+
 test("import and ejection share provenance across real and symlink config paths", (t) => {
   for (const importViaAlias of [false, true]) {
     const opts = fixture(t);

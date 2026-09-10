@@ -128,6 +128,10 @@ destination file, scope/project, and raw name. Identical paths, existing hard
 links, and symlink aliases (including dangling chains) are checked together;
 the same raw name in distinct project scopes stays valid.
 JSON and TOML hosts cannot share a destination file, even for the same manual.
+Missing destination names use Unicode-normalized, case-folded components under
+their existing parent identity. This conservatively rejects case-only differences
+even on case-sensitive volumes; create distinct destination files first when
+that distinction is intentional. Existing distinct files retain separate identities.
 Unknown manual names remain a no-op.
 
 ## Bridge auto-detection

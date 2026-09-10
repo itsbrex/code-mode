@@ -37,6 +37,26 @@ export function destinationFileIdentity(file) {
     const stat = statSync(canonical, { bigint: true });
     if (!stat.isFile()) throw new Error("Ejection destination must be a regular file");
     if (stat.ino !== 0n) return `inode:${stat.dev}:${stat.ino}`;
+    return `path:${canonical}`;
   } catch (error) { if (error.code !== "ENOENT") throw error; }
-  return `path:${canonical}`;
+
+  // Missing names have no inode yet. Anchor them to the real existing parent,
+  // then compare unresolved components conservatively without writing a probe
+  // file or assuming the volume's case/Unicode rules from the operating system.
+  const suffix = [basename(canonical)];
+  let ancestor = dirname(canonical);
+  for (;;) {
+    try {
+      const stat = statSync(ancestor, { bigint: true });
+      if (!stat.isDirectory()) throw new Error("Ejection destination parent must be a directory");
+      const parent = stat.ino !== 0n ? `inode:${stat.dev}:${stat.ino}` : `path:${canonicalFilePath(ancestor)}`;
+      const folded = suffix.map((part) => part.normalize("NFC").toUpperCase().toLowerCase().normalize("NFC"));
+      return `missing:${parent}:${JSON.stringify(folded)}`;
+    } catch (error) {
+      const parent = dirname(ancestor);
+      if (error.code !== "ENOENT" || parent === ancestor) throw error;
+      suffix.unshift(basename(ancestor));
+      ancestor = parent;
+    }
+  }
 }
