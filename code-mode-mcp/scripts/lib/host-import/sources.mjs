@@ -36,8 +36,8 @@ function readStore(file) {
       if (!object(entry) || !Array.isArray(entry.sources)) throw new Error("Invalid provenance sources");
       for (const source of entry.sources) {
         if (!object(source) || !hosts.has(source.host) || !["global", "project"].includes(source.scope) ||
-          (source.scope === "project" && (source.host !== "claude-code" || typeof source.projectKey !== "string" || !source.projectKey)) ||
-          (source.name !== undefined && typeof source.name !== "string") ||
+          (source.scope === "project" && (source.host !== "claude-code" || typeof source.projectKey !== "string" || !source.projectKey.trim())) ||
+          (source.name !== undefined && (typeof source.name !== "string" || !source.name.trim())) ||
           (source.fingerprint !== undefined && !/^[a-f0-9]{64}$/.test(source.fingerprint))) throw new Error("Invalid provenance source");
       }
     }

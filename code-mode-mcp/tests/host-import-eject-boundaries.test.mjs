@@ -60,6 +60,27 @@ test("ejection rejects unsupported target scopes before any host write", (t) => 
   assert.equal(readFileSync(opts.paths.claudeDesktop, "utf8"), '{"mcpServers":{}}');
 });
 
+test("malformed recorded target identities stop the complete ejection before writes", (t) => {
+  for (const invalidSource of [
+    { host: "claude-code", scope: "global", name: "" },
+    { host: "claude-code", scope: "global", name: "   " },
+    { host: "claude-code", scope: "project", projectKey: "   ", name: "second" }
+  ]) {
+    const opts = fixture(t, [manual("first"), manual("second")]);
+    writeFileSync(opts.sourcesFile, JSON.stringify({ schemaVersion: 2, configs: {
+      [opts.utcpPath]: {
+        first: { sources: [{ host: "claude-desktop", scope: "global", name: "first" }] },
+        second: { sources: [invalidSource] }
+      }
+    } }));
+    const files = [opts.utcpPath, ...Object.values(opts.paths), opts.sourcesFile];
+    const before = files.map((file) => readFileSync(file, "utf8"));
+    assert.throws(() => run({ ...opts, eject: ["first", "second"] }), /Invalid provenance source/);
+    assert.deepEqual(files.map((file) => readFileSync(file, "utf8")), before);
+    assert.equal(existsSync(opts.backupRoot), false);
+  }
+});
+
 test("ejection restores raw source names and project scope without consuming another config's provenance", (t) => {
   const opts = fixture(t);
   const sourceName = "crm.sales-prod";
