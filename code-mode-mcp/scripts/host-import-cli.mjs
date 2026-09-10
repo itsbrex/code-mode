@@ -12,12 +12,12 @@ import dotenv from "dotenv";
 import { resolveUtcpConfigPath } from "../config-path.mjs";
 
 // Resolve the UTCP config path from env / .env ONLY, never from argv. Equal
-// configured paths are accepted; divergent UTCP_CONFIG_FILE / UTCP_CONFIG_PATH
+// configured paths are accepted; divergent UTCP_CONFIG_FILE
 // values across environment and .env fail closed. We deliberately avoid
 // utcp-config.resolveConfigPath here: it also
 // scans process.argv for a positional config path, which would mistake a flag
 // value (e.g. `--only memory`, `--risk safe`) for the path. host-import takes the
-// path solely from UTCP_CONFIG_FILE / UTCP_CONFIG_PATH; returns "" if unset so
+// path solely from UTCP_CONFIG_FILE; returns "" if unset so
 // main()'s --apply guard can surface a clear message.
 function safeResolveConfigPath({
   environment = process.env,
@@ -206,7 +206,7 @@ function main() {
     console.error(
       opts.utcpPath
         ? `Refusing to --eject: UTCP config not found at ${opts.utcpPath}`
-          : "Refusing to --eject: set UTCP_CONFIG_FILE (or legacy UTCP_CONFIG_PATH) to your .utcp_config.json"
+          : "Refusing to --eject: set UTCP_CONFIG_FILE to your .utcp_config.json"
     );
     process.exit(1);
   }

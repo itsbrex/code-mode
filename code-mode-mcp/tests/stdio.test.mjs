@@ -51,8 +51,7 @@ test("packed server seam completes real stdio handshake with canonical wire", as
       "list_tools",
       "get_required_keys_for_tool",
       "tools_info",
-      "call_tool_chain",
-      "get_required_variables_for_tool"
+      "call_tool_chain"
     ]
   );
   const canonicalSnapshot = JSON.parse(
@@ -61,7 +60,11 @@ test("packed server seam completes real stdio handshake with canonical wire", as
       "utf8"
     )
   );
-  assert.deepEqual(listed.tools.slice(0, 7), canonicalSnapshot);
+  assert.deepEqual(listed.tools, canonicalSnapshot);
+
+  const retired = await client.callTool({ name: "get_required_variables_for_tool", arguments: { tool_name: "anything" } });
+  assert.equal(retired.isError, true);
+  assert.match(retired.content[0].text, /not found/i);
 
   const result = await client.callTool({ name: "list_tools", arguments: {} });
   assert.deepEqual(JSON.parse(result.content[0].text), { tools: [] });
@@ -83,7 +86,7 @@ test("packed server seam completes real stdio handshake with canonical wire", as
   assert.equal(stderr.join("").includes("Failed to start"), false);
 });
 
-test("stdio calls fail closed on divergent config variables without protocol noise", async (t) => {
+test("stdio calls fail closed on retired config variables without protocol noise", async (t) => {
   const fixtureDir = mkdtempSync(join(tmpdir(), "code-mode-mcp-conflict-"));
   const transport = new StdioClientTransport({
     command: process.execPath,
@@ -105,6 +108,6 @@ test("stdio calls fail closed on divergent config variables without protocol noi
   await client.connect(transport);
   const result = await client.callTool({ name: "list_tools", arguments: {} });
   assert.equal(result.isError, true);
-  assert.match(result.content[0].text, /Conflicting UTCP config paths/);
+  assert.match(result.content[0].text, /UTCP_CONFIG_PATH is no longer supported; use UTCP_CONFIG_FILE/);
   assert.equal(stderr.join("").includes("Unexpected token"), false);
 });

@@ -7,7 +7,6 @@ import {
   createCleanToolNameClient,
   findToolByName,
   getCanonicalToolDefinitions,
-  getCompatibilityToolDefinitions,
   getToolDefinitions,
   resolveServerConfigPath,
   utcpNameToTsInterfaceName
@@ -264,7 +263,7 @@ test("prompt text teaches the UTCP model with async/await support", () => {
   const prompt = buildPromptText();
   assert.match(prompt, /tools_info/);
   assert.match(prompt, /get_required_keys_for_tool/);
-  assert.match(prompt, /get_required_variables_for_tool.*deprecated/i);
+  assert.doesNotMatch(prompt, /get_required_variables_for_tool/);
   // async/await is a first-class, supported execution style (parity with upstream
   // + the library's own AGENT_PROMPT_TEMPLATE, which this prompt now embeds).
   assert.match(prompt, /async function/);
@@ -337,11 +336,7 @@ test("canonical MCP wire exposes exact upstream 1.2.1 tool names", () => {
   );
 });
 
-test("compatibility alias is the only tool outside the canonical wire", () => {
-  assert.deepEqual(
-    getCompatibilityToolDefinitions().map((definition) => definition.name),
-    ["get_required_variables_for_tool"]
-  );
+test("only the canonical seven tools are served", () => {
   assert.deepEqual(
     getToolDefinitions().map((definition) => definition.name),
     [
@@ -351,8 +346,7 @@ test("compatibility alias is the only tool outside the canonical wire", () => {
       "list_tools",
       "get_required_keys_for_tool",
       "tools_info",
-      "call_tool_chain",
-      "get_required_variables_for_tool"
+      "call_tool_chain"
     ]
   );
 });
@@ -601,10 +595,10 @@ test("MCP tools expose clean manual.tool names when manual and server names dupl
   };
 
   const client = createCleanToolNameClient(baseClient);
-  const requiredVariables = getCompatibilityToolDefinitions({
+  const requiredVariables = getCanonicalToolDefinitions({
     getClient: async () => client
   }).find(
-    (definition) => definition.name === "get_required_variables_for_tool"
+    (definition) => definition.name === "get_required_keys_for_tool"
   );
 
   const [firstExposed] = await client.getTools();
@@ -639,7 +633,7 @@ test("MCP tools expose clean manual.tool names when manual and server names dupl
     await requiredVariables.handler({ tool_name: "typefully_remote_mcp.typefully_get_draft" })
   );
   assert.equal(
-    requiredPayload.access_name,
+    requiredPayload.tool_name,
     "typefully_remote_mcp.typefully_get_draft"
   );
   assert.equal(
@@ -846,7 +840,7 @@ test("canonical call_tool_chain routes concise sandbox access through canonical 
   ]);
 });
 
-test("tool definition aggregation serves canonical and compatibility tools from one client", async () => {
+test("tool definition aggregation serves canonical tools from one client", async () => {
   const calls = [];
   const client = {
     ...createClientStub(),
@@ -859,17 +853,16 @@ test("tool definition aggregation serves canonical and compatibility tools from 
 
   await definitions.find((definition) => definition.name === "list_tools").handler({});
   await definitions
-    .find((definition) => definition.name === "get_required_variables_for_tool")
+    .find((definition) => definition.name === "get_required_keys_for_tool")
     .handler({ tool_name: "weather.get_current" });
   assert.deepEqual(calls, ["getTools", "getTools"]);
 });
 
-test("server config resolution accepts equal legacy value and rejects conflicts", () => {
+test("server config resolution accepts canonical value and rejects retired keys", () => {
   assert.equal(
     resolveServerConfigPath({
       environment: {
-        UTCP_CONFIG_FILE: "/tmp/config.json",
-        UTCP_CONFIG_PATH: "/tmp/config.json"
+        UTCP_CONFIG_FILE: "/tmp/config.json"
       },
       dotenvValues: {},
       cwd: "/workspace"
@@ -883,7 +876,7 @@ test("server config resolution accepts equal legacy value and rejects conflicts"
         dotenvValues: { UTCP_CONFIG_PATH: "/tmp/legacy.json" },
         cwd: "/workspace"
       }),
-    /Conflicting UTCP config paths/
+    /UTCP_CONFIG_PATH is no longer supported; use UTCP_CONFIG_FILE/
   );
 });
 
@@ -955,16 +948,16 @@ test("MCP clean-name aliases do not shadow existing canonical tool names", async
   ]);
 });
 
-test("get_required_variables_for_tool reflects UTCP variable semantics", async () => {
+test("get_required_keys_for_tool reflects UTCP variable semantics", async () => {
   const client = createClientStub();
-  const definition = getCompatibilityToolDefinitions({ getClient: async () => client }).find(
-    (tool) => tool.name === "get_required_variables_for_tool"
+  const definition = getCanonicalToolDefinitions({ getClient: async () => client }).find(
+    (tool) => tool.name === "get_required_keys_for_tool"
   );
 
   const payload = parseTextPayload(
     await definition.handler({ tool_name: "weather.get_current" })
   );
-  assert.equal(payload.utcp_name, "weather.get_current");
+  assert.equal(payload.tool_name, "weather.get_current");
   assert.deepEqual(payload.required_variables, ["API_KEY", "ACCOUNT_ID"]);
 });
 

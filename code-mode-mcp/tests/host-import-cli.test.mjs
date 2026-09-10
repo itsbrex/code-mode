@@ -72,7 +72,7 @@ test("parseArgs takes utcpPath from env, never from a flag value (no argv mispar
   assert.equal(a.utcpPath, "/tmp/my.utcp_config.json");
 });
 
-test("parseArgs rejects divergent canonical and legacy config paths", () => {
+test("parseArgs rejects retired config path keys", () => {
   assert.throws(
     () =>
       parseArgs([], {
@@ -81,7 +81,7 @@ test("parseArgs rejects divergent canonical and legacy config paths", () => {
         cwd: "/workspace",
         home: "/tmp/home"
       }),
-    /Conflicting UTCP config paths/
+    /UTCP_CONFIG_PATH is no longer supported; use UTCP_CONFIG_FILE/
   );
 });
 
@@ -124,7 +124,7 @@ test("CLI refuses --eject when the UTCP config path does not exist", () => {
   const missing = join(d, "nope.utcp_config.json");
   const r = spawnSync(process.execPath, [CLI, "--eject", "memory"], {
     cwd: d,
-    env: { ...process.env, UTCP_CONFIG_PATH: missing, UTCP_CONFIG_FILE: "" },
+    env: { ...process.env, UTCP_CONFIG_PATH: "", UTCP_CONFIG_FILE: missing },
     encoding: "utf8"
   });
   assert.equal(r.status, 1);

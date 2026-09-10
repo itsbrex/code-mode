@@ -12,7 +12,7 @@
  * the manifest into the SPA -> serve on localhost -> open the browser.
  *
  * Config path resolution (same as the generator): CLI arg, environment
- * variables (UTCP_CONFIG_FILE / UTCP_CONFIG_PATH), then `.env`.
+ * variables (UTCP_CONFIG_FILE), then `.env`.
  *
  * Flags:
  *   --port <n>     preferred port (default 7821, or $PORT; auto-increments if taken)

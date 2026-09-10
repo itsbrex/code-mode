@@ -448,7 +448,6 @@ You have access to a UTCP Code Mode MCP server that exposes UTCP-native discover
 - Use \`list_tools\` to inspect the currently registered UTCP tool set.
 - Use \`tools_info\` to inspect full tool interfaces before writing execution code.
 - Use \`get_required_keys_for_tool\` when you need to know which environment variables a tool depends on.
-- \`get_required_variables_for_tool\` is a deprecated compatibility alias.
 
 ${CodeModeUtcpClient.AGENT_PROMPT_TEMPLATE}
 
@@ -883,49 +882,8 @@ export function getCanonicalToolDefinitions(
   ];
 }
 
-export function getCompatibilityToolDefinitions(
-  options: ToolRuntimeOptions = {}
-): ToolDefinition[] {
-  const getClient = options.getClient ?? initializeExclusionAwareClient;
-
-  return [
-    {
-      name: "get_required_variables_for_tool",
-      annotations: READ_ONLY_ANNOTATIONS,
-      title: "Get Required Variables for a UTCP Tool",
-      description:
-        "Deprecated compatibility alias for get_required_keys_for_tool. Return the required environment variables for a registered UTCP tool.",
-      inputSchema: {
-        tool_name: z.string().describe("UTCP name or sandbox access name for the tool.")
-      },
-      handler: async (input) => {
-        try {
-          const client = await getClient();
-          const found = await findToolByName(client, input.tool_name);
-          if (!found) {
-            return errorResponse(`Tool '${input.tool_name}' not found`);
-          }
-
-          const requiredVariables = await client.getRequiredVariablesForRegisteredTool(found.utcpName);
-          return textResponse({
-            tool_name: input.tool_name,
-            utcp_name: found.utcpName,
-            access_name: serializeToolSummary(found.tool).access_name,
-            required_variables: requiredVariables
-          });
-        } catch (error) {
-          return errorResponse(error instanceof Error ? error.message : String(error));
-        }
-      }
-    }
-  ];
-}
-
 export function getToolDefinitions(options: ToolRuntimeOptions = {}): ToolDefinition[] {
-  return [
-    ...getCanonicalToolDefinitions(options),
-    ...getCompatibilityToolDefinitions(options)
-  ];
+  return getCanonicalToolDefinitions(options);
 }
 
 export function registerMcpTools(server: McpServer, options: ToolRuntimeOptions = {}): void {
@@ -1026,7 +984,7 @@ async function initializeUtcpClient(): Promise<CodeModeUtcpClient> {
     try {
       await fs.access(configPath);
     } catch {
-      console.warn(`UTCP config file from UTCP_CONFIG_FILE/UTCP_CONFIG_PATH not found: ${configPath}`);
+      console.warn(`UTCP config file from UTCP_CONFIG_FILE not found: ${configPath}`);
     }
   } else {
     configPath = path.resolve(cwd, ".utcp_config.json");

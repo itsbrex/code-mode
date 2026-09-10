@@ -42,7 +42,7 @@ export function parseCliConfigArg(argv) {
       return arg.slice("--config=".length);
     }
     // Skip a value-taking flag's value so `--port 7821` doesn't read "7821" as
-    // the config path (the bug that shadowed UTCP_CONFIG_PATH/_FILE).
+    // the config path (the bug that shadowed UTCP_CONFIG_FILE).
     if (VALUE_FLAGS.has(arg)) {
       i += 1;
       continue;
@@ -57,7 +57,7 @@ export function parseCliConfigArg(argv) {
 /**
  * Resolve the source config path with precedence:
  *   1. explicit arg (or CLI arg)   2. environment variable   3. `.env` value
- * Uses UTCP_CONFIG_FILE as canonical and UTCP_CONFIG_PATH as legacy fallback.
+ * Uses UTCP_CONFIG_FILE; retired UTCP_CONFIG_PATH values are rejected.
  * Equal duplicates are allowed; divergent configured values fail closed.
  */
 export function resolveConfigPath(

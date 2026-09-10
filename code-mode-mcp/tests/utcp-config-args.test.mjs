@@ -25,15 +25,14 @@ test("parseCliConfigArg still finds a real positional alongside value-flags", ()
   assert.equal(parseCliConfigArg(argv("--port", "7833", "/cfg.json")), "/cfg.json");
 });
 
-test("resolveConfigPath prefers canonical key and accepts equal legacy value", () => {
+test("resolveConfigPath accepts equal canonical values from environment and dotenv", () => {
   assert.equal(
     resolveConfigPath(undefined, {
       argv: argv(),
       environment: {
-        UTCP_CONFIG_FILE: "/tmp/canonical.json",
-        UTCP_CONFIG_PATH: "/tmp/canonical.json"
+        UTCP_CONFIG_FILE: "/tmp/canonical.json"
       },
-      dotenvValues: {},
+      dotenvValues: { UTCP_CONFIG_FILE: "/tmp/canonical.json" },
       cwd: "/workspace"
     }),
     "/tmp/canonical.json"
@@ -46,7 +45,7 @@ test("resolveConfigPath rejects conflicting environment and dotenv values", () =
       resolveConfigPath(undefined, {
         argv: argv(),
         environment: { UTCP_CONFIG_FILE: "/tmp/canonical.json" },
-        dotenvValues: { UTCP_CONFIG_PATH: "/tmp/legacy.json" },
+        dotenvValues: { UTCP_CONFIG_FILE: "/tmp/other.json" },
         cwd: "/workspace"
       }),
     /Conflicting UTCP config paths/

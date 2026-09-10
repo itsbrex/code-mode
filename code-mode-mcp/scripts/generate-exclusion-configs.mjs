@@ -16,9 +16,9 @@
  *        the original config, but in explicit opt-in shape you can prune).
  *
  * Configured paths from environment and `.env` are validated together first.
- * Equal values are accepted; divergent `UTCP_CONFIG_FILE` / `UTCP_CONFIG_PATH`
+ * Equal values are accepted; divergent `UTCP_CONFIG_FILE` environment/dotenv
  * values fail closed. After validation, an explicit CLI arg wins; otherwise
- * `UTCP_CONFIG_FILE` is canonical and `UTCP_CONFIG_PATH` is its legacy fallback.
+ * `UTCP_CONFIG_FILE` is the only supported configuration key.
  *
  * Tool names are written in canonical form (`manual.server.tool`), which the
  * exclusion matcher always recognizes. Edit the generated arrays to taste.

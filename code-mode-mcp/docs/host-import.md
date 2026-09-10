@@ -38,7 +38,7 @@ UTCP_CONFIG_FILE=/abs/hide-some.utcp_config.json npm run host-import -- --apply
 ## Safe testing
 
 `--apply` only ever writes the UTCP config (`UTCP_CONFIG_FILE`; legacy
-`UTCP_CONFIG_PATH` remains a fallback); host configs are read-only in that
+`UTCP_CONFIG_PATH` is rejected); host configs are read-only in that
 mode, so applying to a throwaway UTCP path is always safe.
 
 `--strip-host` and `--eject`, by contrast, write the *real* host configs by

@@ -39,9 +39,9 @@ Add this to your MCP client:
 }
 ```
 
-The server reads `UTCP_CONFIG_FILE` first and temporarily accepts
-`UTCP_CONFIG_PATH` as a fallback. Equal duplicates work; divergent values fail
-closed. Without either value, the server checks `.utcp_config.json` in the
+The server reads `UTCP_CONFIG_FILE`. The retired `UTCP_CONFIG_PATH` key
+is rejected with a migration message, including when its value matches the
+canonical key. Without a configured value, the server checks `.utcp_config.json` in the
 current working directory and otherwise starts with an empty config.
 
 ### Claude Code (CLI)
@@ -169,8 +169,8 @@ fields filled in. Both register every manual and **discover its real tools**
 (the config only lists manuals; tool names are only known after registration),
 so they may launch your MCP/CLI manuals — exactly like running the server. The
 source path is resolved from the explicit CLI path, then canonical
-`UTCP_CONFIG_FILE`, then legacy `UTCP_CONFIG_PATH`; conflicting configured
-values fail closed.
+`UTCP_CONFIG_FILE`; conflicting environment/dotenv values and the retired
+`UTCP_CONFIG_PATH` key fail closed.
 
 ### Interactive dashboard
 
@@ -261,8 +261,8 @@ Canonical upstream 1.2.1 wire:
 - `tools_info`
 - `call_tool_chain`
 
-`get_required_variables_for_tool` is a deprecated compatibility alias for
-`get_required_keys_for_tool` (scheduled for removal at wave 7).
+The retired `get_required_variables_for_tool` alias is no longer served.
+Use `get_required_keys_for_tool`.
 
 ## Tool Discovery Flow
 

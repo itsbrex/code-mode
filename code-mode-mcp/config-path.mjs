@@ -1,6 +1,6 @@
 import path from "node:path";
 
-const CONFIG_KEYS = ["UTCP_CONFIG_FILE", "UTCP_CONFIG_PATH"];
+const CONFIG_KEYS = ["UTCP_CONFIG_FILE"];
 
 function configuredEntries(environment, dotenvValues, cwd) {
   const entries = [];
@@ -19,8 +19,8 @@ function configuredEntries(environment, dotenvValues, cwd) {
 }
 
 /**
- * Resolve selected UTCP config without allowing divergent canonical/legacy
- * values to choose different files in different consumers.
+ * Resolve the canonical UTCP config and reject retired keys or divergent
+ * environment/dotenv values before selecting a path.
  */
 export function resolveUtcpConfigPath({
   explicit,
@@ -28,6 +28,11 @@ export function resolveUtcpConfigPath({
   dotenvValues = {},
   cwd = process.cwd()
 } = {}) {
+  for (const values of [environment, dotenvValues]) {
+    if (typeof values?.UTCP_CONFIG_PATH === "string" && values.UTCP_CONFIG_PATH.length > 0) {
+      throw new Error("UTCP_CONFIG_PATH is no longer supported; use UTCP_CONFIG_FILE");
+    }
+  }
   const entries = configuredEntries(environment, dotenvValues, cwd);
   const uniquePaths = new Set(entries.map((entry) => entry.path));
   if (uniquePaths.size > 1) {
