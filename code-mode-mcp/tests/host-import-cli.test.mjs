@@ -19,7 +19,14 @@ function fixture() {
   writeFileSync(claudeDesktop, JSON.stringify({ mcpServers: {} }));
   writeFileSync(codex, '[mcp_servers.context7]\nurl = "https://x/mcp"\n');
   writeFileSync(utcpPath, JSON.stringify({ manual_call_templates: [] }, null, 2));
-  return { d, claudeCode, claudeDesktop, codex, utcpPath, backupRoot: join(d, ".bk") };
+  // Hermetic pins/sources: never read or write the developer's real
+  // ~/.host-import-pins.json / ~/.host-import-sources.json during tests.
+  return {
+    d, claudeCode, claudeDesktop, codex, utcpPath,
+    backupRoot: join(d, ".bk"),
+    pinsFile: join(d, "pins.json"),
+    sourcesFile: join(d, "sources.json")
+  };
 }
 
 test("parseArgs defaults to dry-run", () => {
@@ -80,7 +87,7 @@ test("parseArgs rejects divergent canonical and legacy config paths", () => {
 
 test("run dry-run produces a plan and writes nothing", () => {
   const fx = fixture();
-  const opts = { ...parseArgs([]), paths: { claudeCode: fx.claudeCode, claudeDesktop: fx.claudeDesktop, codex: fx.codex }, utcpPath: fx.utcpPath, backupRoot: fx.backupRoot };
+  const opts = { ...parseArgs([]), paths: { claudeCode: fx.claudeCode, claudeDesktop: fx.claudeDesktop, codex: fx.codex }, utcpPath: fx.utcpPath, backupRoot: fx.backupRoot, pinsFile: fx.pinsFile, sourcesFile: fx.sourcesFile };
   const res = run(opts);
   assert.equal(res.applied, undefined);
   assert.equal(res.plan.items.length, 2);
@@ -93,7 +100,7 @@ test("run dry-run produces a plan and writes nothing", () => {
 
 test("run --apply writes manuals into the UTCP config", () => {
   const fx = fixture();
-  const opts = { ...parseArgs(["--apply"]), paths: { claudeCode: fx.claudeCode, claudeDesktop: fx.claudeDesktop, codex: fx.codex }, utcpPath: fx.utcpPath, backupRoot: fx.backupRoot };
+  const opts = { ...parseArgs(["--apply"]), paths: { claudeCode: fx.claudeCode, claudeDesktop: fx.claudeDesktop, codex: fx.codex }, utcpPath: fx.utcpPath, backupRoot: fx.backupRoot, pinsFile: fx.pinsFile, sourcesFile: fx.sourcesFile };
   const res = run(opts);
   assert.deepEqual(res.applied.added.sort(), ["context7", "memory"]);
   const names = JSON.parse(readFileSync(fx.utcpPath, "utf8")).manual_call_templates.map((t) => t.name).sort();
@@ -126,7 +133,7 @@ test("CLI refuses --eject when the UTCP config path does not exist", () => {
 
 test("run --apply --strip-host removes from host configs", () => {
   const fx = fixture();
-  const opts = { ...parseArgs(["--apply", "--strip-host"]), paths: { claudeCode: fx.claudeCode, claudeDesktop: fx.claudeDesktop, codex: fx.codex }, utcpPath: fx.utcpPath, backupRoot: fx.backupRoot };
+  const opts = { ...parseArgs(["--apply", "--strip-host"]), paths: { claudeCode: fx.claudeCode, claudeDesktop: fx.claudeDesktop, codex: fx.codex }, utcpPath: fx.utcpPath, backupRoot: fx.backupRoot, pinsFile: fx.pinsFile, sourcesFile: fx.sourcesFile };
   run(opts);
   assert.deepEqual(JSON.parse(readFileSync(fx.claudeCode, "utf8")).mcpServers, {});
   assert.ok(!readFileSync(fx.codex, "utf8").includes("[mcp_servers.context7]"));

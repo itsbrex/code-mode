@@ -46,17 +46,22 @@
   --caution-line:color-mix(in oklab,var(--err) 36%,var(--line));
   --verify-wash:color-mix(in oklab,var(--warn) 8%,transparent);
   --verify-line:color-mix(in oklab,var(--warn) 30%,var(--line));
-  /* widescreen layout scale */
-  --measure:920px;--col-gap:clamp(32px,3vw,72px);--col-max:1080px;--wide:1680px;
 }
 [hidden]{display:none!important}
 *{box-sizing:border-box;margin:0;padding:0}
 .sr-only{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important;border:0!important}
-/* hide scrollbars everywhere, unconditionally — base rule (no media-query gating) so it
-   is in effect on first paint and never flashes a native bar during/after a resize.
-   Scrolling still works (wheel/trackpad/touch); only the visual bar is suppressed. */
-*{scrollbar-width:none;-ms-overflow-style:none}
-*::-webkit-scrollbar{width:0;height:0;display:none}
+/* scrollbars: invisible at rest; a thin overlay thumb fades in while a region is
+   actively scrolled and fades back out ~.9s after the last scroll tick (the shell
+   scroll listener toggles .is-scrolling). Dual implementation: standard
+   scrollbar-color where supported, ::-webkit-scrollbar fallback elsewhere — both
+   read the same registered --sb color, so the fade is a plain color transition. */
+@property --sb{syntax:'<color>';inherits:false;initial-value:transparent}
+*{scrollbar-width:thin;scrollbar-color:var(--sb) transparent;--sb:transparent;
+  transition:--sb .5s var(--ease-out) .6s}
+.is-scrolling{--sb:color-mix(in oklab,var(--txt) 32%,transparent);transition:--sb .12s var(--ease-out)}
+*::-webkit-scrollbar{width:9px;height:9px;background:transparent}
+*::-webkit-scrollbar-thumb{background-color:var(--sb);border-radius:999px;border:2px solid transparent;background-clip:padding-box}
+*::-webkit-scrollbar-corner{background:transparent}
 html{scroll-behavior:smooth}
 body{background:var(--bg);
   color:var(--txt);font-family:var(--sans);font-size:14px;line-height:1.5;
@@ -64,9 +69,9 @@ body{background:var(--bg);
 ::selection{background:var(--accent);color:var(--accent-contrast)}
 a{color:var(--txt);text-decoration:underline;text-decoration-color:rgba(255,255,255,.25);text-underline-offset:3px}
 a:hover{text-decoration-color:var(--accent)}
-:focus-visible{outline:1px solid var(--accent);outline-offset:2px}
-.mono,.money,.sfval,.probcell,.kpi .n,tbody td{font-variant-numeric:tabular-nums}
-.wrap{max-width:2560px;margin:0 auto;width:100%;padding:clamp(16px,2vw,40px) clamp(14px,2.4vw,48px) 90px}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.mono{font-variant-numeric:tabular-nums}
+.wrap{width:100%;padding:clamp(16px,2vw,40px) clamp(14px,2.4vw,48px) 90px}
 /* completion semantics: checked = done, so tint with --ok, not --accent */
 input[type=checkbox]{accent-color:var(--ok);cursor:pointer}
 
@@ -78,7 +83,7 @@ header{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;
 
 /* toolbar */
 .toolbar{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:16px}
-.search-wrap{position:relative;flex:1;min-width:240px}
+.search-wrap{position:relative;flex:1;min-width:240px;max-width:640px}
 .search-wrap input{width:100%;background:var(--bg-1);border:1px solid var(--line-2);border-radius:var(--r-sm);
   color:var(--txt);font-family:var(--sans);font-size:13.5px;padding:10px 36px 10px 36px;outline:none;
   transition:border-color .15s}
@@ -115,7 +120,7 @@ header{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;
 .drawer .dh .x:hover{color:var(--txt)}
 .drawer h2{font-size:17px;font-weight:600;letter-spacing:-.01em;padding-right:30px}
 .drawer .co{color:var(--txt-2);font-family:var(--mono);font-size:12px;margin-top:4px}
-.drawer .db{padding:18px max(22px,env(safe-area-inset-right)) max(18px,env(safe-area-inset-bottom)) 22px;overflow-y:auto;flex:1;scrollbar-width:thin;scrollbar-color:var(--input) var(--bg-2)}
+.drawer .db{padding:18px max(22px,env(safe-area-inset-right)) max(18px,env(safe-area-inset-bottom)) 22px;overflow-y:auto;flex:1}
 .fld{display:flex;justify-content:space-between;gap:14px;padding:10px 0;border-bottom:1px solid var(--line)}
 .fld .k{color:var(--txt-3);font-family:var(--mono);font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;flex:0 0 auto}
 .fld .v{text-align:right;font-family:var(--mono);font-size:12px;color:var(--txt);word-break:break-word}
@@ -131,7 +136,9 @@ header{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;
 
 /* toasts — bottom-center stack, Scroll v2 motion */
 .toasts{position:fixed;bottom:28px;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;
-  align-items:center;gap:8px;z-index:var(--z-toast);pointer-events:none}
+  align-items:center;gap:8px;z-index:var(--z-toast);pointer-events:none;transition:bottom .25s var(--ease-out)}
+/* while the selection bulkbar is up (bottom:52px), toasts stack above it */
+body.has-bulkbar .toasts{bottom:104px}
 .toast{pointer-events:auto;display:inline-flex;align-items:center;gap:9px;max-width:min(480px,90vw);
   background:color-mix(in srgb,var(--bg-2) 86%,transparent);border:1px solid var(--line-2);color:var(--txt-2);
   border-radius:8px;padding:8px 14px;font:500 12px/1.4 var(--mono);
@@ -147,15 +154,9 @@ header{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;
 @keyframes toast-enter{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
 @keyframes toast-exit{from{opacity:1;transform:translateY(0)}to{opacity:0;transform:translateY(10px)}}
 
-@media(max-width:1100px){.kpis{grid-template-columns:repeat(3,minmax(0,1fr))}}
-@media(max-width:640px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
-
 /* ---- interaction feedback ---- */
-.chip,.vtab,.kpi,.copyrow button,.linkbtn,.search-clear,.kbdbtn{transition:transform .12s var(--ease-out),background .12s,border-color .12s,color .12s}
-.chip:active,.vtab:active,.copyrow button:active,.linkbtn:active,.kbdbtn:active{transform:scale(.97)}
-.kpi:active{transform:scale(.99)}
-#pkpis .kpi:active{transform:none}
-tbody tr:active{background:var(--elev-2)}
+.chip,.copyrow button,.linkbtn,.search-clear,.kbdbtn{transition:transform .12s var(--ease-out),background .12s,border-color .12s,color .12s}
+.chip:active,.copyrow button:active,.linkbtn:active,.kbdbtn:active{transform:scale(.97)}
 
 /* ---- header command-bar hint ---- */
 .kbdbtn{display:inline-flex;align-items:center;gap:4px;background:transparent;border:1px solid var(--btn-outline);
@@ -182,8 +183,8 @@ tbody tr:active{background:var(--elev-2)}
   font:500 15px var(--sans);caret-color:var(--accent)}
 .cb-input::placeholder{color:var(--txt-2);font-weight:400;opacity:1}
 .cb-badge{background:var(--bg-3);border:1px solid var(--line);color:var(--txt-3);border-radius:4px;
-  padding:3px 7px;font:600 10px var(--mono);letter-spacing:.06em;white-space:nowrap}
-.cb-list{flex:1;min-height:80px;max-height:420px;overflow-y:auto;overscroll-behavior:contain;padding:6px;scroll-behavior:smooth;scrollbar-width:thin;scrollbar-color:var(--input) var(--bg-2)}
+  padding:3px 7px;font:600 11px var(--mono);letter-spacing:.06em;white-space:nowrap}
+.cb-list{flex:1;min-height:80px;max-height:420px;overflow-y:auto;overscroll-behavior:contain;padding:6px;scroll-behavior:smooth}
 .cb-list.kbnav .cb-item{pointer-events:none}
 .cb-group{padding:10px 10px 4px;font:600 10px var(--mono);text-transform:uppercase;letter-spacing:.08em;color:var(--txt-3);user-select:none}
 .cb-item{height:40px;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:0 10px;
@@ -294,8 +295,8 @@ tbody tr:active{background:var(--elev-2)}
    clip. Extracted from the shipped font-swap app; token-only so every theme in
    60-themes.css applies unchanged. */
 html{height:100%}
-body{height:100dvh;height:100vh;display:flex;flex-direction:column;overflow:hidden}
-.wrap{flex:1 1 auto;min-height:0;width:100%;max-width:1180px;margin:0 auto;
+body{height:100vh;height:100dvh;display:flex;flex-direction:column;overflow:hidden}
+.wrap{flex:1 1 auto;min-height:0;width:100%;
   padding:clamp(10px,1.8vw,22px) clamp(14px,2.4vw,40px) 0;
   display:flex;flex-direction:column;gap:clamp(10px,1.6vw,16px)}
 header{flex:none;margin-bottom:0}
@@ -303,45 +304,6 @@ header{flex:none;margin-bottom:0}
 
 /* the one scroll-owning region between header and footer */
 .ws{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;overflow:hidden}
-.ws-scroll{flex:1 1 auto;min-height:0;overflow:auto;scrollbar-width:thin;
-  display:flex;flex-direction:column;gap:8px;padding-right:2px}
-
-/* ---- intake: drop zone + paste ---- */
-.intake{flex:1 1 auto;min-height:0;overflow-y:auto;scrollbar-width:thin;
-  display:flex;flex-direction:column;align-items:stretch;justify-content:center;
-  gap:clamp(10px,1.6vw,16px);max-width:720px;width:100%;margin:0 auto}
-.dropzone{position:relative;border:1.5px dashed var(--line-2);border-radius:var(--r);
-  background:var(--bg-1);padding:clamp(20px,4vh,44px) 20px;text-align:center;
-  cursor:pointer;transition:border-color .18s var(--ease-out),background .18s var(--ease-out),transform .18s var(--ease-out);
-  display:flex;flex-direction:column;align-items:center;gap:10px;outline:none}
-.dropzone:hover,.dropzone:focus-visible{border-color:var(--accent);background:var(--bg-2)}
-.dropzone:focus-visible{box-shadow:0 0 0 3px var(--accent-soft)}
-.dropzone.drag-over{border-color:var(--accent);background:var(--accent-soft);transform:scale(1.01)}
-.dropzone.is-processing{pointer-events:none;opacity:.75}
-.dropzone .dz-ic{font:400 30px/1 var(--pixel);color:var(--accent)}
-.dropzone .dz-t{font:600 15px/1.3 var(--sans);color:var(--txt)}
-.dropzone .dz-s{font:500 12.5px/1.4 var(--mono);color:var(--txt-3)}
-.spinner{width:24px;height:24px;border:2.5px solid var(--line-2);border-top-color:var(--accent);
-  border-radius:50%;animation:spin .7s linear infinite}
-@keyframes spin{to{transform:rotate(360deg)}}
-.dropzone.is-processing .dz-ic,.dropzone:not(.is-processing) .spinner{display:none}
-.or{display:flex;align-items:center;gap:12px;color:var(--txt-3);font:500 11px/1 var(--mono);
-  text-transform:uppercase;letter-spacing:.08em}
-.or::before,.or::after{content:"";flex:1;height:1px;background:var(--line)}
-.paste{width:100%;min-height:96px;max-height:26vh;resize:vertical;border:1px solid var(--line-2);
-  border-radius:var(--r-sm);background:var(--bg-1);color:var(--txt);padding:11px 13px;
-  font:400 12.5px/1.5 var(--mono);outline:none;transition:border-color .15s}
-.paste:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
-.intake-actions{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
-.intake .err{color:var(--err);font:500 12.5px/1.4 var(--mono);min-height:1em}
-
-/* ---- results header row ---- */
-.results{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;gap:12px}
-.res-top{display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;justify-content:space-between}
-.res-file{display:flex;align-items:center;gap:8px;min-width:0}
-.res-file .fn{font:600 13px/1.2 var(--sans);color:var(--txt);white-space:nowrap;overflow:hidden;
-  text-overflow:ellipsis;max-width:42vw}
-.res-actions{display:flex;gap:8px;flex-wrap:wrap}
 
 /* ---- compact stat tiles ---- */
 .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(112px,1fr));gap:8px}
@@ -356,19 +318,6 @@ header{flex:none;margin-bottom:0}
   font:600 11.5px/1 var(--mono);padding:7px 12px;border-radius:999px;transition:color .15s,background .15s;white-space:nowrap}
 .seg button:hover{color:var(--txt)}
 .seg button[aria-pressed=true]{background:var(--accent);color:var(--accent-contrast)}
-
-/* ---- item cards (generic three-column row) ---- */
-.itemlist{flex:1 1 auto;min-height:0;overflow:auto;display:flex;flex-direction:column;gap:8px;
-  padding-right:2px;scrollbar-width:thin}
-.itemcard{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:12px;
-  background:var(--bg-1);border:1px solid var(--line);border-radius:var(--r-sm);padding:11px 14px}
-.itemcard .ic-ic{width:30px;height:30px;display:grid;place-items:center;border-radius:6px;
-  background:var(--bg-3);color:var(--txt-2);font:400 15px/1 var(--pixel)}
-.itemcard .ic-main{min-width:0}
-.itemcard .ic-name{font:600 13.5px/1.25 var(--sans);color:var(--txt);word-break:break-word}
-.itemcard .ic-sub{margin-top:2px;font:500 11.5px/1.4 var(--mono);color:var(--txt-3)}
-.itemcard .ic-right{display:flex;flex-direction:column;align-items:flex-end;gap:5px;text-align:right}
-.itemcard .ic-val{font:600 12px/1 var(--mono);color:var(--txt-2);font-variant-numeric:tabular-nums;white-space:nowrap}
 
 /* ---- tag pill (colour it per-app with the semantic tokens) ---- */
 .tag{display:inline-flex;align-items:center;gap:4px;font:600 10px/1 var(--mono);text-transform:uppercase;
@@ -394,27 +343,24 @@ header{flex:none;margin-bottom:0}
 .foot a:hover{color:var(--accent)}
 .foot .foot-r{display:flex;gap:14px;align-items:center;flex-wrap:wrap}
 
-/* ---- preformatted source view (drawer body) ---- */
-.src-pre{white-space:pre;overflow:auto;background:var(--bg);border:1px solid var(--line);
-  border-radius:var(--r-sm);padding:12px;font:400 11.5px/1.55 var(--mono);color:var(--txt-2);
-  max-height:60vh;scrollbar-width:thin;tab-size:2}
-
 @media (max-width:560px){
-  .res-file .fn{max-width:60vw}
-  .itemcard{grid-template-columns:1fr auto;gap:8px 10px}
-  .itemcard .ic-ic{display:none}
   .foot{justify-content:center}
 }
-/* ---- motion policy (deliberate departure from the OS default): motion is FULL
-   by default regardless of prefers-reduced-motion; the command-bar Motion
-   toggle persists html[data-motion=reduced]. Documented in DESIGN notes. ---- */
+/* ---- motion policy: an OS prefers-reduced-motion signal seeds the default the
+   first time (before the user has chosen); the command-bar Motion toggle then
+   owns it and persists html[data-motion=reduced]. ---- */
 html[data-motion=reduced] *,html[data-motion=reduced] *::before,html[data-motion=reduced] *::after{
   animation-duration:.01ms!important;animation-iteration-count:1!important;
   transition-duration:.01ms!important;scroll-behavior:auto!important}
 @media (pointer:coarse){
-  button,input,.chip,.vtab,.sortbtn,.linkbtn,.copyrow button,.empty-action{min-height:44px}
+  button,input:not([type=checkbox]),.chip,.linkbtn,.copyrow button{min-height:44px}
+  input[type=checkbox]{width:22px;height:22px}
   .search-clear,.drawer .dh .x,.kbdbtn{min-width:44px;min-height:44px}
-  tbody td{padding-top:11px;padding-bottom:11px}
+}
+/* Windows High Contrast: hand scrollbars back to the system palette so the
+   fade-to-transparent trick never leaves a region with no visible thumb. */
+@media (forced-colors: active){
+  *{scrollbar-color:auto}
 }
 </style>
 <style>
@@ -430,7 +376,7 @@ html[data-motion=reduced] *,html[data-motion=reduced] *::before,html[data-motion
 /* search adornments */
 .search-wrap input{padding-right:112px}
 .search-tools{position:absolute;right:7px;top:50%;transform:translateY(-50%);display:flex;gap:4px;align-items:center}
-.minitoggle{display:inline-grid;place-items:center;height:24px;min-width:28px;padding:0 6px;border:1px solid var(--line-2);border-radius:4px;background:var(--bg-2);color:var(--txt-3);font:600 10.5px var(--mono);cursor:pointer;transition:color .12s,background .12s,border-color .12s}
+.minitoggle{display:inline-grid;place-items:center;height:24px;min-width:28px;padding:0 6px;border:1px solid var(--line-2);border-radius:4px;background:var(--bg-2);color:var(--txt-3);font:600 11px var(--mono);cursor:pointer;transition:color .12s,background .12s,border-color .12s}
 .minitoggle:hover{color:var(--txt)}
 .minitoggle[aria-pressed=true]{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
 .search-wrap .search-clear{position:static;transform:none;display:none;width:24px;height:24px}
@@ -452,7 +398,7 @@ html[data-motion=reduced] *,html[data-motion=reduced] *::before,html[data-motion
 
 /* split: manuals column + resizer + preview pane */
 .split{flex:1 1 auto;min-height:0;display:flex}
-.manuals{flex:1 1 auto;min-width:0;overflow-y:auto;scrollbar-width:thin;display:flex;flex-direction:column;gap:10px;padding:2px 4px 46px 2px}
+.manuals{flex:1 1 auto;min-width:0;overflow-y:auto;scrollbar-width:thin;display:flex;flex-direction:column;gap:10px;padding:2px 4px 46px 2px;scroll-padding-top:46px}
 .vresizer{flex:none;width:11px;cursor:col-resize;display:grid;place-items:center;touch-action:none}
 .vresizer::before{content:"";width:1px;height:100%;background:var(--line);transition:background .12s,width .12s}
 .vresizer:hover::before,.vresizer.on::before{background:var(--accent);width:2px}
@@ -476,7 +422,7 @@ body.is-resizing{cursor:col-resize;user-select:none}
 .mcounts .neg{color:var(--err)}
 .mspace{flex:1}
 .mact{display:flex;align-items:center;gap:6px}
-.minibtn{display:inline-flex;align-items:center;gap:5px;height:26px;padding:0 8px;border:1px solid var(--btn-outline);border-radius:var(--r-sm);background:transparent;color:var(--txt-2);font:600 10.5px var(--mono);cursor:pointer;transition:color .12s,background .12s,border-color .12s;white-space:nowrap}
+.minibtn{display:inline-flex;align-items:center;gap:5px;height:26px;padding:0 8px;border:1px solid var(--btn-outline);border-radius:var(--r-sm);background:transparent;color:var(--txt-2);font:600 11px var(--mono);cursor:pointer;transition:color .12s,background .12s,border-color .12s;white-space:nowrap}
 .minibtn:hover{color:var(--txt);background:var(--elev-1)}
 .minibtn.pos:hover{color:var(--ok);border-color:color-mix(in oklab,var(--ok) 45%,transparent)}
 .minibtn.neg:hover{color:var(--err);border-color:color-mix(in oklab,var(--err) 45%,transparent)}
@@ -523,19 +469,19 @@ body.is-resizing{cursor:col-resize;user-select:none}
 .tname{font:500 12.5px var(--mono);color:var(--txt)}
 .tool[data-state=hidden] .tname{color:var(--txt-3);text-decoration:line-through;text-decoration-color:color-mix(in oklab,var(--err) 55%,transparent)}
 .tcopy{display:inline-grid;place-items:center;width:20px;height:20px;border:0;border-radius:4px;background:transparent;color:transparent;cursor:pointer}
-.tool:hover .tcopy{color:var(--txt-3)}
+.tool:hover .tcopy,.tcopy:focus-visible{color:var(--txt-3)}
 .tcopy:hover{background:var(--elev-2);color:var(--accent)}
 .tdesc{margin:2px 0 0;font:400 12px/1.45 var(--sans);color:var(--txt-2);max-width:80ch;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .ttags{display:flex;flex-wrap:wrap;gap:4px;margin-top:5px}
 .ttag{font:500 10px var(--mono);color:var(--txt-3);background:var(--bg-3);border-radius:4px;padding:1px 6px}
 
 /* preview pane */
-.preview{flex:none;width:var(--preview-w,clamp(340px,30vw,460px));min-width:0;display:flex;flex-direction:column;border:1px solid var(--line);border-radius:var(--r);background:var(--bg-1);overflow:hidden}
+.preview{flex:none;width:var(--preview-w,clamp(340px,26vw,620px));min-width:0;display:flex;flex-direction:column;border:1px solid var(--line);border-radius:var(--r);background:var(--bg-1);overflow:hidden}
 .pvhead{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:9px 12px;border-bottom:1px solid var(--line)}
 .pvtitle{font:600 11px var(--mono);letter-spacing:.07em;text-transform:uppercase;color:var(--accent);display:flex;align-items:center;gap:7px}
 .pvactions{display:flex;gap:6px}
 .pvfile{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--line)}
-.pvfile label{font:600 10px var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--txt-3);flex:none}
+.pvfile label{font:600 11px var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--txt-3);flex:none}
 .pvfile input{flex:1;min-width:0;height:28px;padding:0 9px;background:var(--bg-2);border:1px solid var(--line-2);border-radius:var(--r-sm);color:var(--txt);font:500 11px var(--mono);outline:none;transition:border-color .15s}
 .pvfile input:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
 .pvmeta{padding:6px 12px;font:500 10.5px var(--mono);color:var(--txt-3);border-bottom:1px solid var(--line)}
@@ -567,14 +513,31 @@ body.is-resizing{cursor:col-resize;user-select:none}
 .hi-group{display:flex;flex-direction:column;gap:3px}
 .hi-ghead{display:flex;align-items:center;gap:8px;padding:3px 6px;color:var(--txt-3);font:600 10px var(--mono);letter-spacing:.07em;text-transform:uppercase}
 .hi-gcount{padding:0 8px;background:var(--bg-2);border:1px solid var(--line);border-radius:999px;color:var(--txt-2)}
-.hi-row{display:grid;grid-template-columns:auto 1fr auto auto auto auto;align-items:center;gap:8px;padding:7px 11px;background:var(--bg-1);border:1px solid var(--line);border-left-width:2px;border-radius:var(--r-sm);cursor:pointer}
+.hi-item{display:flex;flex-direction:column}
+.hi-row{display:grid;grid-template-columns:auto auto 1fr auto auto auto auto;align-items:center;gap:8px;padding:7px 11px;background:var(--bg-1);border:1px solid var(--line);border-left-width:2px;border-radius:var(--r-sm);cursor:pointer}
 .hi-row:hover{background:var(--elev-1)}
 .hi-row input{width:15px;height:15px}
+/* per-row expandable config view: raw host entry + the UTCP manual it becomes */
+.hi-disc{display:grid;place-items:center;width:22px;height:22px;border:0;background:transparent;color:var(--txt-3);cursor:pointer;border-radius:4px}
+.hi-disc:hover{background:var(--elev-2);color:var(--txt)}
+.hi-disc .ico{transition:transform .15s var(--ease-out);transform:rotate(-90deg)}
+.hi-item.is-open .hi-disc .ico{transform:none}
+.hi-item.is-open .hi-row{border-bottom-left-radius:0;border-bottom-right-radius:0}
+.hi-cfg{display:none;border:1px solid var(--line);border-top:0;border-left-width:2px;
+  border-radius:0 0 var(--r-sm) var(--r-sm);background:var(--bg);padding:10px 12px;gap:12px}
+.hi-item.is-open .hi-cfg{display:grid}
+@media(min-width:1100px){.hi-item.is-open .hi-cfg{grid-template-columns:1fr 1fr}}
+.hi-cfg .cfg-k{font:600 10.5px var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--txt-3);margin-bottom:5px}
+.hi-cfg pre{white-space:pre-wrap;word-break:break-word;margin:0;background:var(--bg-1);border:1px solid var(--line);
+  border-radius:var(--r-sm);padding:9px 11px;font:400 11px/1.55 var(--mono);color:var(--txt-2);max-height:34vh;overflow:auto;tab-size:2}
+.hi-cfg .cfg-note{font:400 11.5px/1.5 var(--sans);color:var(--txt-3)}
+.hi-name-wrap{display:flex;align-items:center;gap:7px;min-width:0}
 .hi-name{overflow:hidden;font:500 12.5px var(--mono);color:var(--txt);white-space:nowrap;text-overflow:ellipsis}
 .hi-row.st-new{border-left-color:var(--accent)}
 .hi-row.st-federated{border-left-color:var(--ok)}
 .hi-row.st-pinned{border-left-color:var(--warn)}
 .hi-row.st-skip{opacity:.55;cursor:default}
+.hi-row.st-bridge{border-left-color:var(--info);cursor:default}
 .hi-pin{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;background:transparent;border:1px solid transparent;border-radius:4px;color:var(--txt-3);cursor:pointer}
 .hi-pin:hover{background:var(--elev-2);color:var(--txt)}
 .hi-pin.is-on{color:var(--warn)}
@@ -586,6 +549,10 @@ body.is-resizing{cursor:col-resize;user-select:none}
 .hi-badge.b-skip{color:var(--txt-3)}
 .hi-badge.b-risk-safe{color:var(--ok);background:color-mix(in oklab,var(--ok) 12%,transparent);border-color:color-mix(in oklab,var(--ok) 45%,transparent)}
 .hi-badge.b-risk-manual{color:var(--err);background:color-mix(in oklab,var(--err) 12%,transparent);border-color:color-mix(in oklab,var(--err) 45%,transparent)}
+.hi-badge.b-bridge{color:var(--info);background:color-mix(in oklab,var(--info) 12%,transparent);border-color:color-mix(in oklab,var(--info) 45%,transparent)}
+.hi-badge.b-dup-same{color:var(--info);background:color-mix(in oklab,var(--info) 12%,transparent);border-color:color-mix(in oklab,var(--info) 40%,transparent)}
+.hi-badge.b-dup-diff{color:var(--warn);background:color-mix(in oklab,var(--warn) 12%,transparent);border-color:color-mix(in oklab,var(--warn) 40%,transparent)}
+.hi-badge.b-source{color:var(--txt-3);font-weight:500;text-transform:none}
 body.hi-busy #viewHost{opacity:.55;pointer-events:none}
 
 /* drawer field rows reused from shell (.fld). tool drawer pre */
@@ -597,6 +564,17 @@ body.hi-busy #viewHost{opacity:.55;pointer-events:none}
 @media(max-width:760px){
   .toolbar .selwrap,.toolbar .dirbtn{display:none}
   .tdesc{-webkit-line-clamp:1}
+}
+
+/* wide: surplus width becomes tool columns and breathing room, not commute.
+   Stat tiles stop stretching, and each manual body lays its tools out in
+   as many 560px+ columns as fit. The -1px bottom margin lets the final
+   row's hairline overlap the card border instead of doubling it. */
+@media(min-width:1680px){
+  .stats{grid-template-columns:repeat(auto-fit,minmax(110px,240px))}
+  .mbody{display:grid;grid-template-columns:repeat(auto-fill,minmax(560px,1fr));column-gap:clamp(24px,2vw,56px);margin-bottom:-1px}
+  .mbody .tool:last-child{border-bottom:1px solid color-mix(in oklab,var(--line) 62%,transparent)}
+  .mempty{grid-column:1/-1}
 }
 </style></head>
 <body>
@@ -656,6 +634,7 @@ body.hi-busy #viewHost{opacity:.55;pointer-events:none}
             <option value="state">sort: decision</option>
             <option value="desc">sort: description</option>
           </select>
+          <svg class="ico" aria-hidden="true"><use href="#i-chevron"/></svg>
         </label>
         <button type="button" class="dirbtn" id="sortDir" data-dir="asc" aria-label="Sort direction: ascending — click to flip" title="Sort direction">↑</button>
         <label class="selwrap" title="Order the manuals: config order, alphabetical, or your drag order">
@@ -664,9 +643,11 @@ body.hi-busy #viewHost{opacity:.55;pointer-events:none}
             <option value="alpha">order: a–z</option>
             <option value="custom">order: custom</option>
           </select>
+          <svg class="ico" aria-hidden="true"><use href="#i-chevron"/></svg>
         </label>
         <span class="spacer"></span>
         <button type="button" class="chip narrow-only" id="previewBtn" title="Open the config preview">preview</button>
+        <button type="button" class="chip" id="collapseAllBtn" title="Collapse every manual" aria-pressed="false"><svg class="ico"><use href="#i-chevron"/></svg> <span id="collapseAllLbl">collapse</span></button>
         <button type="button" class="chip" id="hostImportToggle" title="Migrate host MCP servers into code-mode, or strip already-federated ones"><svg class="ico"><use href="#i-server"/></svg> host import</button>
         <button type="button" class="chip" id="resetBtn" title="Reset every decision to the config's defaults"><svg class="ico"><use href="#i-reset"/></svg> reset</button>
       </div>
@@ -676,7 +657,7 @@ body.hi-busy #viewHost{opacity:.55;pointer-events:none}
 
       <div class="split">
         <div class="manuals" id="tools" aria-label="Manuals and tools" tabindex="-1"></div>
-        <div class="vresizer" id="resizer" role="separator" aria-orientation="vertical" aria-label="Resize preview panel" title="Drag to resize · double-click to reset"></div>
+        <div class="vresizer" id="resizer" role="separator" tabindex="0" aria-orientation="vertical" aria-label="Resize preview panel" title="Drag to resize · arrow keys nudge · double-click to reset"></div>
         <aside class="preview" id="preview" aria-label="Config preview">
           <div class="pvhead">
             <span class="pvtitle"><svg class="ico"><use href="#i-bolt"/></svg> config preview</span>
@@ -702,9 +683,26 @@ body.hi-busy #viewHost{opacity:.55;pointer-events:none}
         <button type="button" class="chip" id="hiBack" title="Back to tool exclusion (esc)"><svg class="ico"><use href="#i-arrow-left"/></svg> back</button>
         <span style="font:600 12px var(--mono);display:inline-flex;align-items:center;gap:7px"><svg class="ico" style="color:var(--accent)"><use href="#i-server"/></svg> host import</span>
         <span class="count-note" id="hiSummary">scanning…</span>
+        <div class="search-wrap" style="min-width:200px">
+          <span class="ic" aria-hidden="true"><svg class="ico"><use href="#i-search"/></svg></span>
+          <input id="hiSearch" type="text" placeholder="Search servers…  ( / )" aria-label="Search host servers" autocomplete="off" spellcheck="false" style="padding-right:34px"/>
+          <div class="search-tools">
+            <button type="button" class="search-clear" id="hiSearchClear" aria-label="Clear server search">×</button>
+          </div>
+        </div>
+        <label class="selwrap" title="Sort the servers within each host section">
+          <select id="hiSortField" aria-label="Sort host servers by">
+            <option value="name">sort: name</option>
+            <option value="status">sort: status</option>
+            <option value="risk">sort: risk</option>
+          </select>
+          <svg class="ico" aria-hidden="true"><use href="#i-chevron"/></svg>
+        </label>
+        <button type="button" class="dirbtn" id="hiSortDir" data-dir="asc" aria-label="Sort direction: ascending — click to flip" title="Sort direction">↑</button>
         <span class="spacer"></span>
         <button type="button" class="chip" id="hiRefresh" title="Re-scan the host configs"><svg class="ico"><use href="#i-reset"/></svg> refresh</button>
-        <button type="button" class="chip" id="hiSelMigratable" title="Select every migratable server">select new</button>
+        <button type="button" class="chip" id="hiCfgToggle" title="Expand every row's config view" aria-pressed="false"><svg class="ico"><use href="#i-chevron"/></svg> <span id="hiCfgLbl">expand configs</span></button>
+        <button type="button" class="chip" id="hiSelMigratable" title="Select every migratable server — where the same name exists on several hosts with DIFFERENT configs, the best candidate is picked automatically">select new</button>
         <button type="button" class="chip" id="hiSelFederated" title="Select every already-federated (strippable) server">select federated</button>
         <button type="button" class="chip" id="hiClear">clear</button>
         <button type="button" class="btn-primary" id="hiMigrate" style="padding:7px 12px;font:600 11.5px var(--mono)" title="Write the selected servers into the UTCP config"><svg class="ico"><use href="#i-download"/></svg> migrate → code-mode</button>
@@ -806,8 +804,28 @@ const def = { theme: 'auto', motion: 'full' };
 function load(){ try { return Object.assign({}, def, JSON.parse(localStorage.getItem(LS) || '{}')); } catch(e){ return Object.assign({}, def); } }
 function save(){ localStorage.setItem(LS, JSON.stringify(st)); }
 let st = load();
+/* Until the user has picked a motion setting themselves, honor the OS
+   prefers-reduced-motion signal; the ⌘K toggle then owns the choice. */
+try {
+  const raw = JSON.parse(localStorage.getItem(LS) || '{}');
+  if(!('motion' in raw) && matchMedia('(prefers-reduced-motion: reduce)').matches) st.motion = 'reduced';
+} catch { /* ignore */ }
 
 const APP_STATE = {};
+
+/* ── scrollbar reveal: flag whichever region is actively scrolling so CSS can
+   fade its thumb in, then clear the flag ~.9s after the last scroll event.
+   Capture-phase listener catches every scroll container, including ones
+   created after boot; re-renders that wipe the class only hide the thumb. */
+const sbTimers = new WeakMap();
+addEventListener('scroll', e => {
+  const el = e.target === document ? document.documentElement : e.target;
+  if(!(el instanceof Element)) return;
+  el.classList.add('is-scrolling');
+  clearTimeout(sbTimers.get(el));
+  sbTimers.set(el, setTimeout(() => el.classList.remove('is-scrolling'), 900));
+}, { capture: true, passive: true });
+
 /* ── toasts ── */
 function toast(msg,kind,opts){
   kind=kind||'info';opts=opts||{};
@@ -886,9 +904,9 @@ function cycleTheme(){
 }
 if(prefersLight.addEventListener)prefersLight.addEventListener('change',()=>{if(st.theme==='auto')applyTheme('auto');});
 
-/* ── motion (deliberate policy): full by default regardless of the OS
-   prefers-reduced-motion setting; Motion: Reduced persists
-   html[data-motion=reduced]. The toggle lives in the command bar. ── */
+/* ── motion: the OS prefers-reduced-motion signal seeds the default until the
+   user chooses; Motion: Reduced persists html[data-motion=reduced]. The
+   toggle lives in the command bar. ── */
 function applyMotion(m,announce){
   st.motion=m==='reduced'?'reduced':'full';save();
   if(st.motion==='reduced')document.documentElement.dataset.motion='reduced';
@@ -920,6 +938,13 @@ function closeSheet(){
    in your app module. `extra` understands { kbd, note, on, preview }.
    `preview` names a theme applied live while the item is highlighted. */
 const cbEls = { ov: $('cbov'), dlg: $('cb'), q: $('cbq'), list: $('cblist'), count: $('cbcount') };
+/* Windows/Linux see Ctrl, not ⌘ — the handler already accepts both. */
+if(!/Mac|iPhone|iPad|iPod/.test(navigator.platform)){
+  const open = $('cmdopen');
+  if(open){ open.innerHTML = '<kbd>Ctrl</kbd><kbd>K</kbd>'; open.title = 'Command bar (Ctrl+K)'; }
+  const glyph = document.querySelector('.cb-glyph');
+  if(glyph) glyph.textContent = 'Ctrl';
+}
 let cbItems = [], cbSel = 0, cbPrevFocus = null;
 const cbOpenState = () => !cbEls.dlg.hidden;
 
@@ -1154,7 +1179,7 @@ const ui = {
   sortField: "name", sortDir: "asc",
   orderMode: "config", manualOrder: null,
   selected: new Set(), collapsed: new Set(),
-  regexError: false, previewInDrawer: false
+  regexError: false, regexSlow: false, previewInDrawer: false
 };
 let draggedManual = null;
 let storageKey = null;
@@ -1249,12 +1274,24 @@ function loadPersisted(){
 /* ------------------------------------------------------------ search/sort */
 function buildMatcher(){
   ui.regexError = false;
+  ui.regexSlow = false;
   const q = ui.query.trim();
   if(!q) return () => true;
   if(ui.regex){
+    if(q.length > 200){ ui.regexError = true; ui.regexSlow = true; return null; }
     let re;
     try { re = new RegExp(q, ui.caseSensitive ? "" : "i"); } catch { ui.regexError = true; return null; }
-    return (tool, mn) => re.test(tool.name) || re.test(tool.shortName) || re.test(tool.description) || re.test(mn) || tool.tags.some(t => re.test(t));
+    // Catastrophic-backtracking guard: descriptions are the only haystacks
+    // long enough to blow up, so clip them, and a cumulative budget abandons
+    // the pattern once a render has burned ~250ms in the matcher. A single
+    // .test can still stall, but only on a 300-char input.
+    const clip = s => (s.length > 300 ? s.slice(0, 300) : s);
+    const started = performance.now();
+    return (tool, mn) => {
+      if(ui.regexSlow) return false;
+      if(performance.now() - started > 250){ ui.regexError = true; ui.regexSlow = true; return false; }
+      return re.test(tool.name) || re.test(tool.shortName) || re.test(clip(tool.description)) || re.test(mn) || tool.tags.some(t => re.test(t));
+    };
   }
   const needle = ui.caseSensitive ? q : q.toLowerCase();
   const norm = s => (ui.caseSensitive ? s : s.toLowerCase());
@@ -1274,6 +1311,19 @@ function passesDecisionFilter(manual, tool){
   if(d === "hidden") return hid;
   if(d === "changed") return hid !== tool.initiallyHidden;
   return true;
+}
+/* Sort/order setters shared by the toolbar controls and the ⌘K commands —
+   the ≤760px layout hides the selects, so the command bar is the only path
+   there and must keep the (hidden) controls in sync for wider layouts. */
+function setSortField(f){ ui.sortField = f; byId("sortField").value = f; render(); }
+function setOrderMode(m){ ui.orderMode = m; byId("manualOrder").value = m; render(); persist(); }
+function flipSortDir(){
+  ui.sortDir = ui.sortDir === "asc" ? "desc" : "asc";
+  const btn = byId("sortDir");
+  btn.dataset.dir = ui.sortDir;
+  btn.textContent = ui.sortDir === "asc" ? "↑" : "↓";
+  btn.setAttribute("aria-label", `Sort direction: ${ui.sortDir === "asc" ? "ascending" : "descending"} — click to flip`);
+  render();
 }
 function sortTools(tools, mn){
   const dir = ui.sortDir === "asc" ? 1 : -1;
@@ -1315,6 +1365,25 @@ function computeView(){
 function syncSelectionUi(){
   byId("selCount").textContent = String(ui.selected.size);
   byId("bulkbar").hidden = ui.selected.size === 0;
+  // Toasts stack just above the bulkbar while it is up, so neither hides the other.
+  document.body.classList.toggle("has-bulkbar", ui.selected.size > 0);
+}
+function allManualsCollapsed(){
+  return manifest.manuals.length > 0 && manifest.manuals.every(m => ui.collapsed.has(m.name));
+}
+function syncCollapseAllBtn(){
+  const btn = byId("collapseAllBtn");
+  if(!btn) return;
+  const collapsed = allManualsCollapsed();
+  byId("collapseAllLbl").textContent = collapsed ? "expand" : "collapse";
+  btn.title = collapsed ? "Expand every manual" : "Collapse every manual";
+  btn.setAttribute("aria-pressed", String(collapsed));
+  btn.querySelector(".ico").style.transform = collapsed ? "rotate(-90deg)" : "";
+}
+function toggleAllCollapsed(){
+  if(allManualsCollapsed()) ui.collapsed.clear();
+  else for(const m of manifest.manuals) ui.collapsed.add(m.name);
+  render(); persist();
 }
 function bulkSetHidden(hidden){
   for(const name of ui.selected){
@@ -1333,6 +1402,38 @@ function selectAllMatches(){
   render();
 }
 function clearSelection(){ ui.selected.clear(); render(); }
+function setMatchesHidden(hidden){
+  let n = 0;
+  for(const { manual, tools } of computeView()){
+    if(decisions.get(manual.name)?.removed) continue;
+    for(const t of tools){ setToolHidden(manual.name, t.name, hidden); n += 1; }
+  }
+  render(); persist();
+  toast(`${hidden ? "Hid" : "Exposed"} <b>${n}</b> matching tool${n === 1 ? "" : "s"}`, hidden ? "warning" : "success");
+}
+async function confirmReset(){
+  const ok = await confirmDialog({
+    danger: true, badge: "reset", title: "Reset every decision?",
+    body: "All Exposed/Hidden choices, allowlist flags, and removals go back to the config file's defaults.",
+    ok: "Reset everything"
+  });
+  if(!ok) return;
+  const snapshot = [...decisions].map(([n, d]) =>
+    [n, { defaultDisabled: d.defaultDisabled, removed: d.removed, hidden: new Set(d.hidden) }]);
+  resetDecisions(); render(); persist();
+  const uid = "undoReset" + Date.now();
+  toast(`Reset to config defaults — <b><a href="#" id="${uid}">undo</a></b>`, "info", { ms: 8000 });
+  const u = document.getElementById(uid);
+  if(u) u.addEventListener("click", ev => {
+    ev.preventDefault();
+    for(const [n, d] of snapshot){
+      const dec = decisions.get(n);
+      if(dec){ dec.defaultDisabled = d.defaultDisabled; dec.removed = d.removed; dec.hidden = new Set(d.hidden); }
+    }
+    render(); persist();
+    toast("Decisions restored", "success");
+  });
+}
 
 /* ----------------------------------------------------------------- render */
 function failBadge(manual){
@@ -1355,7 +1456,7 @@ function toolRow(manual, tool){
   return `<div class="tool${selected ? " is-selected" : ""}" data-tool="${esc(tool.name)}" data-manual="${esc(manual.name)}" data-state="${state}">
     <input type="checkbox" class="tsel" ${selected ? "checked" : ""} title="Select for bulk Expose / Hide" aria-label="Select ${esc(tool.shortName)}"/>
     <button type="button" class="tpill" title="Click to ${state === "exposed" ? "hide" : "expose"} this tool" aria-label="Toggle visibility for ${esc(tool.shortName)}, currently ${label}"><span class="dot"></span><svg class="ico"><use href="#${icon}"/></svg>${label}</button>
-    <div class="tmain" title="Open details">
+    <div class="tmain" role="button" tabindex="0" title="Open details" aria-label="Details for ${esc(tool.shortName)}">
       <div class="trow1">
         <code class="tname">${esc(tool.shortName)}</code>
         <button type="button" class="tcopy" data-copy="${esc(tool.name)}" title="Copy canonical name" aria-label="Copy canonical name ${esc(tool.name)}"><svg class="ico"><use href="#i-copy"/></svg></button>
@@ -1377,10 +1478,10 @@ function manualSection({ manual, tools }){
     : tools.map(t => toolRow(manual, t)).join("");
   return `<section class="manual${collapsed ? " is-collapsed" : ""}${removed ? " is-removed" : ""}" data-manual="${esc(manual.name)}">
     <header class="mhead">
-      <button type="button" class="mgrip" draggable="true" title="Drag to reorder this manual" aria-label="Drag to reorder ${esc(manual.name)}"><svg class="ico"><use href="#i-grip"/></svg></button>
+      <button type="button" class="mgrip" draggable="true" title="Drag to reorder this manual · ↑/↓ move it while focused" aria-label="Reorder ${esc(manual.name)} — drag, or press arrow up / arrow down"><svg class="ico"><use href="#i-grip"/></svg></button>
       <button type="button" class="mdisc" aria-expanded="${!collapsed}" title="Collapse / expand" aria-label="Toggle ${esc(manual.name)}"><svg class="ico"><use href="#i-chevron"/></svg></button>
-      <input type="checkbox" class="msel" ${allSel ? "checked" : ""} data-some="${someSel}" title="Select every tool in this manual" aria-label="Select all tools in ${esc(manual.name)}"/>
-      <h2 class="mname" title="Reveal ${esc(manual.name)} in the config preview">${esc(manual.name)}</h2>
+      <input type="checkbox" class="msel" ${allSel ? "checked" : ""} data-some="${someSel}" title="Select this manual's tools (only the ones the current search/filters show)" aria-label="Select the currently shown tools in ${esc(manual.name)}"/>
+      <h2 class="mname" role="button" tabindex="0" title="Reveal ${esc(manual.name)} in the config preview">${esc(manual.name)}</h2>
       <span class="tag t-muted" title="Provider type">${esc(manual.type)}</span>
       ${failBadge(manual)}
       ${removed ? `<span class="rmpill" title="Excluded from the generated config">removed</span>` : `<span class="mcounts">${countsHtml(manual)}</span>`}
@@ -1402,7 +1503,9 @@ function render(){
   const view = computeView();
   byId("search").closest(".search-wrap").classList.toggle("is-invalid", ui.regexError);
   if(view.length === 0){
-    root.innerHTML = ui.regexError
+    root.innerHTML = ui.regexSlow
+      ? `<div class="panel-mid"><span class="pm-ic">◍</span><span class="pm-t">Pattern too slow</span><span class="pm-s">That regex backtracks too much to run safely. Simplify it, or turn off the <code>.*</code> toggle.</span></div>`
+      : ui.regexError
       ? `<div class="panel-mid"><span class="pm-ic">◍</span><span class="pm-t">Invalid regular expression</span><span class="pm-s"><code>${esc(ui.query)}</code> isn’t valid regex. Fix it or turn off the <code>.*</code> toggle.</span></div>`
       : `<div class="panel-mid"><span class="pm-ic">◍</span><span class="pm-t">No tools match</span><span class="pm-s">Adjust your search or filters to see tools.</span></div>`;
   } else {
@@ -1412,6 +1515,7 @@ function render(){
   updateStatus(view);
   updatePreview(); // also refreshes the stat tiles
   syncSelectionUi();
+  syncCollapseAllBtn();
 }
 function tallyDecisions(){
   let hidden = 0, dd = 0, removed = 0, activeTools = 0;
@@ -1563,7 +1667,10 @@ function doDownload(){
   toast(`Downloaded <b>${esc(safeFilename())}</b>`, "success");
 }
 function doCopy(){ window.copyText(currentJson(), "Config copied to clipboard"); }
+let saveInFlight = false;
 async function doSave(overwrite = false){
+  if(saveInFlight && !overwrite) return;
+  saveInFlight = true;
   try {
     const res = await fetch("/api/save", {
       method: "POST",
@@ -1582,6 +1689,8 @@ async function doSave(overwrite = false){
     } else toast(esc(data.error || "Save failed"), "error");
   } catch {
     toast("Save needs the local server (npm run config-builder)", "error");
+  } finally {
+    saveInFlight = false;
   }
 }
 
@@ -1702,6 +1811,27 @@ function wireEvents(){
     if(name) scrollPreviewToManual(name.closest(".manual").dataset.manual);
   });
 
+  // Keyboard activation for the row-details and reveal-in-preview targets —
+  // both are non-button elements with role=button, so Enter/Space must work.
+  // The drag grip also answers ↑/↓ as the non-pointer reorder path.
+  byId("tools").addEventListener("keydown", e => {
+    const grip = e.target.closest(".mgrip");
+    if(grip && (e.key === "ArrowUp" || e.key === "ArrowDown")){
+      e.preventDefault();
+      moveManual(grip.closest(".manual").dataset.manual, e.key === "ArrowUp" ? -1 : 1);
+      return;
+    }
+    if(e.key !== "Enter" && e.key !== " ") return;
+    const main = e.target.closest(".tmain");
+    if(main){
+      e.preventDefault();
+      const row = main.closest(".tool");
+      openToolDrawer(row.dataset.manual, row.dataset.tool); return;
+    }
+    const name = e.target.closest(".mname");
+    if(name){ e.preventDefault(); scrollPreviewToManual(name.closest(".manual").dataset.manual); }
+  });
+
   byId("tools").addEventListener("change", e => {
     if(e.target.classList.contains("tsel")){
       const row = e.target.closest(".tool");
@@ -1717,8 +1847,13 @@ function wireEvents(){
       return;
     }
     if(e.target.classList.contains("msel")){
-      const manual = manualByName.get(e.target.closest(".manual").dataset.manual);
-      for(const t of manual.tools){
+      // Scope to the tools the current search/filters actually show — checking
+      // the header box while filtered must never sweep invisible tools into a
+      // bulk Hide (mirrors selectAllMatches's removed-manual care).
+      const mName = e.target.closest(".manual").dataset.manual;
+      const entry = computeView().find(v => v.manual.name === mName);
+      const scope = entry ? entry.tools : manualByName.get(mName).tools;
+      for(const t of scope){
         if(e.target.checked) ui.selected.add(t.name); else ui.selected.delete(t.name);
       }
       render(); return;
@@ -1754,20 +1889,15 @@ function wireEvents(){
     for(const b of $$("#decisionSeg button")) b.setAttribute("aria-pressed", String(b === btn));
     render();
   });
-  byId("sortField").addEventListener("change", e => { ui.sortField = e.target.value; render(); });
-  byId("manualOrder").addEventListener("change", e => { ui.orderMode = e.target.value; render(); persist(); });
-  byId("sortDir").addEventListener("click", e => {
-    ui.sortDir = ui.sortDir === "asc" ? "desc" : "asc";
-    e.currentTarget.dataset.dir = ui.sortDir;
-    e.currentTarget.textContent = ui.sortDir === "asc" ? "↑" : "↓";
-    e.currentTarget.setAttribute("aria-label", `Sort direction: ${ui.sortDir === "asc" ? "ascending" : "descending"} — click to flip`);
-    render();
-  });
+  byId("sortField").addEventListener("change", e => { setSortField(e.target.value); });
+  byId("manualOrder").addEventListener("change", e => { setOrderMode(e.target.value); });
+  byId("sortDir").addEventListener("click", flipSortDir);
 
   byId("downloadBtn").addEventListener("click", doDownload);
   byId("copyBtn").addEventListener("click", doCopy);
   byId("saveBtn").addEventListener("click", () => doSave());
-  byId("resetBtn").addEventListener("click", () => { resetDecisions(); render(); persist(); toast("Reset to config defaults", "info"); });
+  byId("resetBtn").addEventListener("click", () => { confirmReset(); });
+  byId("collapseAllBtn").addEventListener("click", toggleAllCollapsed);
   byId("previewBtn").addEventListener("click", openPreviewDrawer);
   byId("hostImportToggle").addEventListener("click", () => showHost(true));
   byId("hiBack").addEventListener("click", () => showHost(false));
@@ -1789,7 +1919,13 @@ function wireEvents(){
       return;
     }
     if(/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName || "")) return;
-    if(hostViewOpen()){ if(!document.body.classList.contains("hi-busy")) showHost(false); }
+    if(hostViewOpen()){
+      if(hi.query){
+        hi.query = ""; byId("hiSearch").value = "";
+        byId("hiSearch").closest(".search-wrap").classList.remove("has-q");
+        hiRender();
+      } else if(!document.body.classList.contains("hi-busy")) showHost(false);
+    }
     else if(ui.query){ ui.query = ""; byId("search").value = ""; byId("search").closest(".search-wrap").classList.remove("has-q"); render(); }
     else if(ui.selected.size) clearSelection();
   }, { capture: true });
@@ -1802,7 +1938,11 @@ window.APP_SHORTCUTS = [
 ];
 window.appKeydown = e => {
   if(!manifest) return;
-  if(e.key === "/"){ e.preventDefault(); byId("search").focus(); byId("search").select(); return; }
+  if(e.key === "/"){
+    e.preventDefault();
+    const target = hostViewOpen() ? byId("hiSearch") : byId("search");
+    target.focus(); target.select(); return;
+  }
   if(hostViewOpen()) return;
   if(e.key === "d"){ e.preventDefault(); doDownload(); }
   else if(e.key === "c"){ e.preventDefault(); doCopy(); }
@@ -1815,7 +1955,10 @@ window.appCommands = add => {
   add("Config", "⇣", "Download config", doDownload, { kbd: "d" });
   add("Config", "⧉", "Copy config JSON", doCopy, { kbd: "c" });
   add("Config", "◨", "Save to ./configs/", () => doSave(), { kbd: "s" });
-  add("Config", "↺", "Reset all decisions to config defaults", () => { resetDecisions(); render(); persist(); toast("Reset to config defaults", "info"); });
+  add("Config", "↺", "Reset all decisions to config defaults", () => { confirmReset(); });
+  add("Bulk", "◫", "Select all matching tools", () => { selectAllMatches(); });
+  add("Bulk", "◎", "Hide all matching tools", () => setMatchesHidden(true));
+  add("Bulk", "◉", "Expose all matching tools", () => setMatchesHidden(false));
   add("Bulk", "◉", "Expose every tool", () => { globalExpose(false); render(); persist(); toast("Exposed every tool", "success"); });
   add("Bulk", "◎", "Hide every tool", () => { globalExpose(true); render(); persist(); toast("Hid every tool", "warning"); });
   add("Bulk", "▣", "Set allowlist (default_disabled) on all", () => { globalDefaultDisabled(true); render(); persist(); toast("Every manual now serializes as an allowlist", "info"); });
@@ -1825,6 +1968,13 @@ window.appCommands = add => {
   add("View", "⇄", hostViewOpen() ? "Back to tool exclusion" : "Host import", () => showHost(!hostViewOpen()), { kbd: "h" });
   add("View", "▤", "Collapse all manuals", () => { for(const m of manifest.manuals) ui.collapsed.add(m.name); render(); persist(); });
   add("View", "▥", "Expand all manuals", () => { ui.collapsed.clear(); render(); persist(); });
+  add("View", "⇅", "Sort tools by name", () => setSortField("name"), { on: ui.sortField === "name" });
+  add("View", "⇅", "Sort tools by decision", () => setSortField("state"), { on: ui.sortField === "state" });
+  add("View", "⇅", "Sort tools by description", () => setSortField("desc"), { on: ui.sortField === "desc" });
+  add("View", "↕", "Flip sort direction", flipSortDir, { note: ui.sortDir === "asc" ? "ascending" : "descending" });
+  add("View", "≡", "Order manuals: config", () => setOrderMode("config"), { on: ui.orderMode === "config" });
+  add("View", "≡", "Order manuals: a–z", () => setOrderMode("alpha"), { on: ui.orderMode === "alpha" });
+  add("View", "≡", "Order manuals: custom (drag order)", () => setOrderMode("custom"), { on: ui.orderMode === "custom" });
   if(!WIDE.matches) add("View", "◧", "Config preview", openPreviewDrawer, { kbd: "p" });
   for(const m of manifest.manuals) add("Manuals", "→", "Jump to " + m.name, () => { if(hostViewOpen()) showHost(false); jumpToManual(m.name); });
 };
@@ -1835,6 +1985,24 @@ byId("scrim").addEventListener("click", () => { ui.previewInDrawer = false; });
 
 /* ------------------------------------------------------------ drag order */
 function currentOrderNames(){ return orderedManuals().map(m => m.name); }
+/* Non-pointer reorder path: ↑/↓ on the focused grip. Switches to custom order
+   like a drop does, and keeps focus on the moved manual's grip. */
+function moveManual(name, delta){
+  const order = currentOrderNames();
+  const i = order.indexOf(name);
+  const j = i + delta;
+  if(i < 0 || j < 0 || j >= order.length) return;
+  order.splice(i, 1); order.splice(j, 0, name);
+  ui.manualOrder = order;
+  ui.orderMode = "custom";
+  byId("manualOrder").value = "custom";
+  render(); persist();
+  const grip = document.querySelector(`.manual[data-manual="${cssEsc(name)}"] .mgrip`);
+  if(grip){
+    grip.focus();
+    grip.closest(".manual").classList.add("jump-flash");
+  }
+}
 function clearDragMarks(){
   for(const el of $$(".manual.is-dragging, .manual.drag-before, .manual.drag-after"))
     el.classList.remove("is-dragging", "drag-before", "drag-after");
@@ -1912,13 +2080,78 @@ function wireResizer(){
     document.documentElement.style.removeProperty("--preview-w");
     try { localStorage.removeItem("utcp-cb:previewW"); } catch { /* ignore */ }
   });
+  // Keyboard resize — the separator role promises it. Left grows the preview
+  // (the handle sits on its left edge), right shrinks it; same clamp as drag.
+  resizer.addEventListener("keydown", e => {
+    let delta = 0;
+    if(e.key === "ArrowLeft") delta = 24;
+    else if(e.key === "ArrowRight") delta = -24;
+    else return;
+    e.preventDefault();
+    const cur = byId("preview").getBoundingClientRect().width;
+    const w = Math.min(Math.max(Math.round(cur + delta), 320), Math.round(window.innerWidth * 0.7));
+    document.documentElement.style.setProperty("--preview-w", w + "px");
+    try { localStorage.setItem("utcp-cb:previewW", w + "px"); } catch { /* ignore */ }
+  });
 }
 
 /* ------------------------------------------------------------ host import */
 const HOST_LABEL = { "claude-code": "Claude Code", "claude-desktop": "Claude Desktop", codex: "Codex" };
-const hi = { items: [], pins: [], selected: new Set(), loaded: false, busy: false };
+const hi = { items: [], pins: [], sources: {}, selected: new Set(), expanded: new Set(),
+  query: "", sortField: "name", sortDir: "asc", loaded: false, busy: false };
 const hiKey = it => `${it.host}|${it.scope}|${it.projectKey || ""}|${it.name}`;
+/* Search matches the visible row AND the underlying configs, so "docker" or a
+   URL fragment finds the servers that use it even before expanding anything. */
+function hiMatches(it){
+  const q = hi.query.trim().toLowerCase();
+  if(!q) return true;
+  const hay = [
+    it.name, it.host, it.scope, it.projectKey || "", it.risk, hiStatus(it), it.reason || "",
+    it.server ? JSON.stringify(it.server) : "", it.manual ? JSON.stringify(it.manual) : ""
+  ].join("\n").toLowerCase();
+  return hay.includes(q);
+}
+const HI_STATUS_RANK = { new: 0, federated: 1, pinned: 2, bridge: 3, skip: 4 };
+const HI_RISK_RANK = { safe: 0, partial: 1, manual: 2 };
+function hiSortRows(rows){
+  const dir = hi.sortDir === "asc" ? 1 : -1;
+  return rows.slice().sort((a, b) => {
+    let r = 0;
+    if(hi.sortField === "status") r = (HI_STATUS_RANK[hiStatus(a)] ?? 9) - (HI_STATUS_RANK[hiStatus(b)] ?? 9);
+    else if(hi.sortField === "risk") r = (HI_RISK_RANK[a.risk] ?? 9) - (HI_RISK_RANK[b.risk] ?? 9);
+    return (r || a.name.localeCompare(b.name) || String(a.projectKey).localeCompare(String(b.projectKey))) * dir;
+  });
+}
+/* Same-name analysis across hosts: identical fingerprints = a true duplicate
+   (migrating imports ONE manual and records every source), differing
+   fingerprints = a conflict the user must resolve by picking one row. */
+function hiDupInfo(){
+  const byName = new Map();
+  for(const it of hi.items){
+    if(!it.canMigrate) continue;
+    if(!byName.has(it.name)) byName.set(it.name, []);
+    byName.get(it.name).push(it);
+  }
+  const info = new Map();
+  for(const rows of byName.values()){
+    if(rows.length < 2) continue;
+    const same = rows.every(r => r.configHash === rows[0].configHash);
+    for(const r of rows) info.set(hiKey(r), { kind: same ? "same" : "diff", n: rows.length });
+  }
+  return info;
+}
+function hiBestRow(rows){
+  // best = safest conversion, then the richer config, then host priority
+  const riskRank = { safe: 0, partial: 1, manual: 2 };
+  const hostRank = { "claude-code": 0, "claude-desktop": 1, codex: 2 };
+  return rows.slice().sort((a, b) =>
+    (riskRank[a.risk] ?? 3) - (riskRank[b.risk] ?? 3) ||
+    (b.configHash?.length ?? 0) - (a.configHash?.length ?? 0) ||
+    (hostRank[a.host] ?? 9) - (hostRank[b.host] ?? 9)
+  )[0];
+}
 function hiStatus(it){
+  if(it.bridge) return "bridge"; // outranks federated: a bridge is never strippable
   if(it.pinned) return "pinned";
   if(it.duplicate) return "federated";
   if(it.canMigrate) return "new";
@@ -1938,8 +2171,10 @@ function hiApply(plan){
   if(!plan) return hiLoad();
   hi.items = plan.items || [];
   hi.pins = plan.pins || [];
+  hi.sources = plan.sources || {};
   const keys = new Set(hi.items.map(hiKey));
   for(const k of [...hi.selected]) if(!keys.has(k)) hi.selected.delete(k);
+  for(const k of [...hi.expanded]) if(!keys.has(k)) hi.expanded.delete(k);
   hiRender();
 }
 async function hiLoad(){
@@ -1954,46 +2189,81 @@ async function hiLoad(){
 }
 function hiLoadIfNeeded(){ if(!hi.loaded) hiLoad(); }
 function hiRender(){
-  let nw = 0, fed = 0, pin = 0;
+  let nw = 0, fed = 0, pin = 0, brg = 0;
   for(const it of hi.items){
     const s = hiStatus(it);
-    if(s === "new") nw++; else if(s === "federated") fed++; else if(s === "pinned") pin++;
+    if(s === "new") nw++; else if(s === "federated") fed++; else if(s === "pinned") pin++; else if(s === "bridge") brg++;
   }
-  byId("hiSummary").textContent = `${hi.items.length} entries · ${nw} new · ${fed} federated · ${pin} pinned`;
+  const matched = hi.items.filter(hiMatches);
+  byId("hiSummary").textContent =
+    `${hi.items.length} entries · ${nw} new · ${fed} federated · ${pin} pinned · ${brg} bridges` +
+    (hi.query.trim() ? ` · ${matched.length} shown` : "");
   byId("hiLegend").innerHTML = [
-    ["new", "not in code-mode yet — migratable"],
-    ["federated", "already in code-mode — strippable"],
-    ["pinned", "never migrated or stripped"],
-    ["skip", "code-mode bridge — left alone"]
-  ].map(([k, d]) => `<span class="it"><span class="hi-badge b-${k}">${k}</span>${esc(d)}</span>`).join("");
+    ["b-new", "new", "not in code-mode yet — migratable"],
+    ["b-federated", "federated", "already in code-mode — strippable"],
+    ["b-pinned", "pinned", "never migrated or stripped"],
+    ["b-bridge", "bridge", "code-mode bridge (auto-detected) — never migrated, never stripped"],
+    ["b-skip", "skip", "not convertible — left alone"],
+    ["b-dup-same", "≡ same", "identical config on several hosts — imports ONCE, every source host recorded for eject"],
+    ["b-dup-diff", "≠ differs", "same name, different config — expand to compare, then pick which host's version wins"]
+  ].map(([cls, k, d]) => `<span class="it"><span class="hi-badge ${cls}">${k}</span>${esc(d)}</span>`).join("");
 
+  const dupInfo = hiDupInfo();
   const groups = new Map();
-  for(const it of hi.items){
+  for(const it of matched){
     if(!groups.has(it.host)) groups.set(it.host, []);
     groups.get(it.host).push(it);
   }
   const order = ["claude-code", "claude-desktop", "codex"];
   const hosts = [...groups.keys()].sort((a, b) => order.indexOf(a) - order.indexOf(b));
   const html = hosts.map(host => {
-    const rows = groups.get(host).slice()
-      .sort((a, b) => a.name.localeCompare(b.name) || String(a.projectKey).localeCompare(String(b.projectKey)));
+    const rows = hiSortRows(groups.get(host));
     const body = rows.map(it => {
       const stt = hiStatus(it);
       const k = hiKey(it);
+      const open = hi.expanded.has(k);
       const scopeLabel = it.scope === "project" ? `project · ${esc(shortProject(it.projectKey))}` : "global";
-      return `<label class="hi-row st-${stt}" data-key="${esc(k)}">
-        <input type="checkbox" ${hi.selected.has(k) ? "checked" : ""} ${stt === "skip" ? "disabled" : ""}/>
-        <span class="hi-name">${esc(it.name)}</span>
+      const dup = dupInfo.get(k);
+      const dupBadge = !dup ? "" : dup.kind === "same"
+        ? `<span class="hi-badge b-dup-same" title="Identical config on ${dup.n} hosts — migrating imports ONE manual and records every source host, so eject can route it back to all of them">≡ same ×${dup.n}</span>`
+        : `<span class="hi-badge b-dup-diff" title="A same-named server exists on another host with a DIFFERENT config — expand both rows to compare; selecting this row deselects the others">≠ differs</span>`;
+      const manualName = (it.manual && it.manual.name) || it.name;
+      const src = hi.sources[manualName];
+      const srcHosts = stt === "federated" && src && Array.isArray(src.sources)
+        ? [...new Set(src.sources.map(s => s.host))] : [];
+      const srcBadge = srcHosts.length
+        ? `<span class="hi-badge b-source" title="Imported from ${esc(srcHosts.join(", "))} — eject without --to routes it back there">from ${esc(srcHosts.join(" + "))}</span>` : "";
+      const cfg = `<div class="hi-cfg">
+        <div><div class="cfg-k">host entry · ${esc(HOST_LABEL[it.host] || it.host)}</div>
+          ${it.server ? `<pre>${syntaxHighlight(JSON.stringify(it.server, null, 2))}</pre>` : `<div class="cfg-note">no raw entry available (re-launch the config-builder server for config views)</div>`}</div>
+        <div><div class="cfg-k">→ utcp manual${it.manual ? "" : " · not convertible"}</div>
+          ${it.manual ? `<pre>${syntaxHighlight(JSON.stringify(it.manual, null, 2))}</pre>` : `<div class="cfg-note">${esc(it.reason || "cannot convert")}</div>`}</div>
+      </div>`;
+      return `<div class="hi-item${open ? " is-open" : ""}">
+        <label class="hi-row st-${stt}" data-key="${esc(k)}">
+        <button type="button" class="hi-disc" data-disc aria-expanded="${open}" title="Show this server's JSON config" aria-label="Toggle config view for ${esc(it.name)}"><svg class="ico"><use href="#i-chevron"/></svg></button>
+        <input type="checkbox" ${hi.selected.has(k) ? "checked" : ""} ${stt === "skip" || stt === "bridge" ? "disabled" : ""} aria-label="Select ${esc(it.name)}"/>
+        <span class="hi-name-wrap"><span class="hi-name">${esc(it.name)}</span>${dupBadge}${srcBadge}</span>
         <span class="hi-badge b-scope">${scopeLabel}</span>
         <span class="hi-badge b-risk-${esc(it.risk)}" title="${esc(it.reason || "")}">${esc(it.risk)}</span>
         <span class="hi-badge b-${stt}">${stt}</span>
         <button type="button" class="hi-pin ${it.pinned ? "is-on" : ""}" data-pin aria-label="${it.pinned ? "Unpin" : "Pin"}" title="${it.pinned ? "Unpin" : "Pin — never migrate or strip"}"><svg class="ico"><use href="#i-pin"/></svg></button>
-      </label>`;
+        </label>
+        ${cfg}
+      </div>`;
     }).join("");
     return `<div class="hi-group"><div class="hi-ghead">${esc(HOST_LABEL[host] || host)}<span class="hi-gcount">${rows.length}</span></div>${body}</div>`;
   }).join("");
   byId("hiList").innerHTML = html ||
-    `<div class="panel-mid"><span class="pm-ic">◍</span><span class="pm-t">No host MCP servers found</span><span class="pm-s">Nothing to migrate — the Claude Code, Claude Desktop, and Codex configs hold no MCP servers.</span></div>`;
+    (hi.items.length && hi.query.trim()
+      ? `<div class="panel-mid"><span class="pm-ic">◍</span><span class="pm-t">No servers match</span><span class="pm-s">Nothing matches <code>${esc(hi.query.trim())}</code> — it searches names, hosts, and the raw configs.</span></div>`
+      : `<div class="panel-mid"><span class="pm-ic">◍</span><span class="pm-t">No host MCP servers found</span><span class="pm-s">Nothing to migrate — the Claude Code, Claude Desktop, and Codex configs hold no MCP servers.</span></div>`);
+  const allOpen = hi.items.length > 0 && hi.items.every(it => hi.expanded.has(hiKey(it)));
+  const cfgBtn = byId("hiCfgToggle");
+  byId("hiCfgLbl").textContent = allOpen ? "collapse configs" : "expand configs";
+  cfgBtn.title = allOpen ? "Collapse every row's config view" : "Expand every row's config view";
+  cfgBtn.setAttribute("aria-pressed", String(allOpen));
+  cfgBtn.querySelector(".ico").style.transform = allOpen ? "" : "rotate(-90deg)";
 }
 const hiSelected = () => {
   const byKey = new Map(hi.items.map(it => [hiKey(it), it]));
@@ -2008,15 +2278,27 @@ async function hiBusy(fn){
   finally { hi.busy = false; document.body.classList.remove("hi-busy"); }
 }
 async function hiMigrate(){
-  const names = [...new Set(hiSelected().filter(it => hiStatus(it) === "new").map(it => it.name))];
-  if(!names.length) return toast("Select some <b>new</b> servers to migrate", "warning");
+  const rows = hiSelected().filter(it => hiStatus(it) === "new");
+  if(!rows.length) return toast("Select some <b>new</b> servers to migrate", "warning");
   await hiBusy(async () => {
+    // Row-precise selections: on a same-name conflict the server imports the
+    // exact row picked here, never silently the first host scanned.
+    const selections = rows.map(it => ({ name: it.name, host: it.host, scope: it.scope, projectKey: it.projectKey, configHash: it.configHash }));
     const r = await hiApi("/api/host-apply", {
-      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ names })
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ selections })
     });
     hiApply(r.plan);
     const n = r.added ? r.added.length : 0;
-    toast(n ? `Migrated <b>${n}</b> server${n === 1 ? "" : "s"} → code-mode` : "Nothing new to migrate", n ? "success" : "warning");
+    const merged = Object.entries(r.sourcesRecorded || {}).filter(([, hostsArr]) => hostsArr.length > 1);
+    toast(
+      n
+        ? `Migrated <b>${n}</b> server${n === 1 ? "" : "s"} → code-mode` +
+          (merged.length ? ` · <b>${merged.length}</b> merged from multiple hosts (sources recorded)` : "")
+        : "Nothing new to migrate",
+      n ? "success" : "warning", { ms: merged.length ? 5000 : 2600 }
+    );
+    if(r.harvested && r.harvested.written && r.harvested.written.length)
+      toast(`Harvested <b>${r.harvested.written.length}</b> secret var(s) → code-mode.env`, "info", { ms: 4000 });
   });
 }
 async function hiStrip(){
@@ -2049,14 +2331,57 @@ async function hiTogglePin(it){
     hiApply(r.plan);
   });
 }
+byId("hiSearch").addEventListener("input", e => {
+  hi.query = e.target.value;
+  e.target.closest(".search-wrap").classList.toggle("has-q", hi.query !== "");
+  hiRender();
+});
+byId("hiSearchClear").addEventListener("click", () => {
+  hi.query = ""; byId("hiSearch").value = "";
+  byId("hiSearch").closest(".search-wrap").classList.remove("has-q");
+  hiRender(); byId("hiSearch").focus();
+});
+byId("hiSortField").addEventListener("change", e => { hi.sortField = e.target.value; hiRender(); });
+byId("hiSortDir").addEventListener("click", e => {
+  hi.sortDir = hi.sortDir === "asc" ? "desc" : "asc";
+  e.currentTarget.dataset.dir = hi.sortDir;
+  e.currentTarget.textContent = hi.sortDir === "asc" ? "↑" : "↓";
+  e.currentTarget.setAttribute("aria-label", `Sort direction: ${hi.sortDir === "asc" ? "ascending" : "descending"} — click to flip`);
+  hiRender();
+});
 byId("hiRefresh").addEventListener("click", () => hiLoad());
 byId("hiMigrate").addEventListener("click", hiMigrate);
 byId("hiStrip").addEventListener("click", hiStrip);
 byId("hiClear").addEventListener("click", () => { hi.selected.clear(); hiRender(); });
+byId("hiCfgToggle").addEventListener("click", () => {
+  const allOpen = hi.items.length > 0 && hi.items.every(it => hi.expanded.has(hiKey(it)));
+  if(allOpen) hi.expanded.clear();
+  else for(const it of hi.items) hi.expanded.add(hiKey(it));
+  hiRender();
+});
 byId("hiSelMigratable").addEventListener("click", () => {
   hi.selected.clear();
-  for(const it of hi.items) if(hiStatus(it) === "new") hi.selected.add(hiKey(it));
+  // Group new rows by name: identical duplicates all select (one import,
+  // all sources recorded); conflicting duplicates get the best row only.
+  const byName = new Map();
+  for(const it of hi.items){
+    if(hiStatus(it) !== "new") continue;
+    if(!byName.has(it.name)) byName.set(it.name, []);
+    byName.get(it.name).push(it);
+  }
+  let conflicts = 0;
+  for(const rows of byName.values()){
+    const distinct = new Set(rows.map(r => r.configHash)).size;
+    if(rows.length > 1 && distinct > 1){
+      conflicts += 1;
+      hi.selected.add(hiKey(hiBestRow(rows)));
+    } else {
+      for(const r of rows) hi.selected.add(hiKey(r));
+    }
+  }
   hiRender();
+  if(conflicts)
+    toast(`Auto-picked the best candidate for <b>${conflicts}</b> conflicted name${conflicts === 1 ? "" : "s"} — expand the ≠ rows to review`, "info", { ms: 4500 });
 });
 byId("hiSelFederated").addEventListener("click", () => {
   hi.selected.clear();
@@ -2068,8 +2393,34 @@ byId("hiList").addEventListener("change", e => {
   const k = e.target.closest(".hi-row")?.dataset.key;
   if(!k) return;
   if(e.target.checked) hi.selected.add(k); else hi.selected.delete(k);
+  // Conflict groups behave like radios: only one host's version of a
+  // same-named-but-different server can win the import.
+  if(e.target.checked){
+    const it = hi.items.find(x => hiKey(x) === k);
+    const dup = it && hiDupInfo().get(k);
+    if(it && dup && dup.kind === "diff"){
+      let dropped = false;
+      for(const o of hi.items){
+        const ok = hiKey(o);
+        if(o.name === it.name && ok !== k && hi.selected.delete(ok)) dropped = true;
+      }
+      if(dropped) hiRender();
+    }
+  }
 });
 byId("hiList").addEventListener("click", e => {
+  const disc = e.target.closest("[data-disc]");
+  const nameEl = e.target.closest(".hi-name");
+  if(disc || nameEl){
+    // Both live inside the row <label>; stop the label from toggling the
+    // selection checkbox — these open the config view instead.
+    e.preventDefault(); e.stopPropagation();
+    const k = e.target.closest(".hi-row")?.dataset.key;
+    if(!k) return;
+    if(hi.expanded.has(k)) hi.expanded.delete(k); else hi.expanded.add(k);
+    hiRender();
+    return;
+  }
   const pin = e.target.closest("[data-pin]");
   if(!pin) return;
   e.preventDefault(); e.stopPropagation();

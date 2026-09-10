@@ -26,6 +26,9 @@ UTCP_CONFIG_FILE=/abs/hide-some.utcp_config.json npm run host-import -- --apply
 # Eject: move UTCP manual(s) back out into host config(s) as standard MCP servers
 ... npm run host-import -- --eject salesforce-mcp --to claude-code
 ... npm run host-import -- --eject zoominfo-mcp,databar-mcp --to claude-code,codex
+# No --to: each manual routes back to the host(s) it was imported from
+# (provenance sidecar; falls back to claude-code when nothing is recorded)
+... npm run host-import -- --eject salesforce-mcp
 
 # Host-path overrides — rehearse strip/eject on COPIES instead of real configs
 ... npm run host-import -- --apply --strip-host \
@@ -79,6 +82,27 @@ failed registrations. Run it after any import/eject batch.
 Duplicates (already in the UTCP config, matched by raw or sanitized name) are
 never re-added. Backups live under `~/.host-import-backups/<timestamp>/` (FIFO, keep 30).
 
+## Import provenance & same-name servers
+
+The same server name can exist on several hosts. Two cases:
+
+- **Identical config** (key-order-independent comparison of the converted
+  manual): a true duplicate. Import writes ONE manual and records **every**
+  source host in `~/.host-import-sources.json` (override with
+  `--sources-file`). The UTCP client config schema is strict, so provenance
+  lives in this sidecar rather than inside the UTCP config.
+- **Different config**: a conflict. The web panel marks both rows `≠ differs`,
+  lets you expand each row to compare the raw host entry against the UTCP
+  manual it would become, and selecting one row deselects the others —
+  "select new" auto-picks the best candidate (safest risk, then the richer
+  config, then claude-code > claude-desktop > codex). The CLI keeps its
+  first-host-wins behavior.
+
+`--eject <name>` without `--to` consumes the recorded provenance: the manual is
+written back to each host it originally came from, and its sidecar entry is
+removed. The web panel shows `from <hosts>` on federated rows that have
+recorded sources.
+
 Codex servers marked `enabled = false` are skipped (never migrated). Nested
 Codex `[mcp_servers.NAME.env]` / `[mcp_servers.NAME.http_headers]` sub-tables are
 folded into the server. Same-named servers with a `-mcp` suffix (`hookmark` vs
@@ -95,7 +119,43 @@ a standard MCP server entry (un-wrapping `mcp-remote` back to a `url`/`http`
 server), writes it into each target host, and removes the manual from the UTCP
 config. All writes are backed up.
 
+## Bridge auto-detection
+
+Bridge instances registered under arbitrary names (brandjet-style forks,
+`op run`-wrapped launches) are detected without relying on the name, three
+tiers cheapest-first: exact-name denylist; command/args mentioning
+`code-mode`/`code_mode` or a `UTCP_CONFIG_FILE`/`UTCP_CONFIG_PATH` env var;
+finally a content probe that reads absolute script paths from command/args
+(≤8MB, cached, relative imports followed one level) and scans for the
+code-mode wire markers (`call_tool_chain`, `@utcp/code-mode`,
+`CodeModeUtcpClient`). Detected bridges show a `bridge` badge in the web
+panel, cannot be selected, are never migrated, and strip requests against
+them are refused server-side even when their name matches a federated manual.
+
 ## What it does NOT do
-- It does not import code-mode bridges into themselves (denylisted).
+- It does not import code-mode bridges into themselves (denylisted or
+  auto-detected — see Bridge auto-detection).
 - `--strip-host` only removes servers that were actually migrated this run.
 - It is one-way per run (import OR eject) — not a bidirectional/continuous sync.
+
+### Import boundary and provenance
+
+The local config builder binds only to loopback and requires an exact local Host,
+Origin, and session token for writes. Import selections include the configuration
+digest shown during review; a changed source returns HTTP 409 before any write.
+Importing the server module does not launch discovery or load credentials.
+Credential tooling retains its default output masking.
+
+Duplicate identity includes harvested values, so same-named servers with different
+credentials remain separate. Only the chosen source supplies harvested variables;
+strip refuses pinned, changed, or unmatched sources. Provenance schema 2 separates
+entries by absolute UTCP config path and retains raw host names for ejection.
+Legacy provenance is scoped to its recorded path when read, then migrated on an
+explicit write. Corrupt provenance stops the operation. Sidecar writes are atomic
+and use private file permissions.
+
+Tests use temporary synthetic host/config files and a fake credential executable.
+They do not authorize live migration, provider discovery, or authentication.
+Ejection preserves variable references; review each target host's credential
+resolution before a real migration. Existing backup-on-write recovery remains
+necessary for failures across separate host, environment, and UTCP files.

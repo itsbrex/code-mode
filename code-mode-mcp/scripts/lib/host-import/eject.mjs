@@ -22,6 +22,10 @@ export function removeManualsFromUtcp(utcpPath, names, backupRoot, opts = {}) {
 
 // Move manuals out into one or more hosts, then remove them from the UTCP config.
 export function ejectManuals(utcpPath, names, targets, hostPaths, backupRoot, opts = {}) {
+  if (!targets.length || targets.some((target) => !["claude-code", "claude-desktop", "codex"].includes(target.host) ||
+    (target.scope === "project" && (target.host !== "claude-code" || !target.projectKey)))) {
+    throw new Error("Ejection requires explicit supported host targets and project scope");
+  }
   const config = JSON.parse(readFileSync(utcpPath, "utf8"));
   const templates = Array.isArray(config.manual_call_templates) ? config.manual_call_templates : [];
   const byName = new Map(templates.map((t) => [t?.name, t]));
@@ -34,12 +38,13 @@ export function ejectManuals(utcpPath, names, targets, hostPaths, backupRoot, op
     const { server } = manualToHostServer(manual);
     const wroteTo = [];
     for (const target of targets) {
+      const sourceName = target.name ?? name;
       if (target.host === "codex") {
-        addToCodexToml(hostPaths.codex, name, server, backupRoot, opts);
+        addToCodexToml(hostPaths.codex, sourceName, server, backupRoot, opts);
       } else if (target.host === "claude-desktop") {
-        addToClaudeJson(hostPaths.claudeDesktop, name, server, backupRoot, { scope: "global", ...opts });
+        addToClaudeJson(hostPaths.claudeDesktop, sourceName, server, backupRoot, { scope: "global", ...opts });
       } else {
-        addToClaudeJson(hostPaths.claudeCode, name, server, backupRoot, { scope: target.scope ?? "global", projectKey: target.projectKey, ...opts });
+        addToClaudeJson(hostPaths.claudeCode, sourceName, server, backupRoot, { scope: target.scope ?? "global", projectKey: target.projectKey, ...opts });
       }
       wroteTo.push(target.host);
     }
