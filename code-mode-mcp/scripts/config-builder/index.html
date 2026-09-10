@@ -1192,7 +1192,7 @@ async function boot(){
   if(!manifest){
     try { manifest = await (await fetch("/api/manifest")).json(); } catch { manifest = null; }
   }
-  if(!manifest || !Array.isArray(manifest.manuals) || manifest.manuals.length === 0){
+  if(!manifest || !Array.isArray(manifest.manuals)){
     byId("tools").innerHTML =
       '<div class="panel-mid"><span class="pm-ic">◍</span><span class="pm-t">No config loaded</span>' +
       '<span class="pm-s">Start the builder with <code>npm run config-builder -- &lt;path-to-.utcp_config.json&gt;</code> so it can register your manuals and discover tools.</span></div>';
@@ -2146,7 +2146,7 @@ function hiBestRow(rows){
   const hostRank = { "claude-code": 0, "claude-desktop": 1, codex: 2 };
   return rows.slice().sort((a, b) =>
     (riskRank[a.risk] ?? 3) - (riskRank[b.risk] ?? 3) ||
-    (b.configHash?.length ?? 0) - (a.configHash?.length ?? 0) ||
+    (b.configFieldCount ?? 0) - (a.configFieldCount ?? 0) ||
     (hostRank[a.host] ?? 9) - (hostRank[b.host] ?? 9)
   )[0];
 }

@@ -11,7 +11,7 @@ import { once } from "node:events";
 test("local HTTP boundary rejects rebound requests and imports the selected project source", { timeout: 15000 }, async (t) => {
   const root = mkdtempSync(join(tmpdir(), "config-api-"));
   const ctx = { configPath: join(root, "config.json"), hostPaths: { claudeCode: join(root, "claude.json"), claudeDesktop: join(root, "desktop.json"), codex: join(root, "codex.toml") }, sourcesFile: join(root, "sources.json"), pinsFile: join(root, "pins.json"), backupRoot: join(root, "backups") };
-  const spec = (value) => ({ command: "fixture-server", env: { API_TOKEN: value } });
+  const spec = (value) => ({ command: "fixture-server", args: value.includes("alpha") ? ["--fixture", "expanded"] : [], env: { API_TOKEN: value } });
   writeFileSync(ctx.configPath, '{"manual_call_templates":[]}');
   writeFileSync(ctx.hostPaths.claudeCode, JSON.stringify({ mcpServers: {}, projects: { "/fixture/a": { mcpServers: { memory: spec("fixture-secret-alpha-for-test") } }, "/fixture/b": { mcpServers: { memory: spec("fixture-secret-beta-for-test") } } } }));
   writeFileSync(ctx.hostPaths.claudeDesktop, '{"mcpServers":{}}');
@@ -41,6 +41,7 @@ test("local HTTP boundary rejects rebound requests and imports the selected proj
   assert.equal((await request("/api/host-apply", { method: "POST", headers: { ...headers, "x-config-builder-token": "wrong" }, body: { names: ["memory"] } })).status, 403);
   const before = await request("/api/host-plan");
   assert.notEqual(before.body.items[0].configHash, before.body.items[1].configHash);
+  assert.ok(before.body.items.find((item) => item.projectKey === "/fixture/a").configFieldCount > before.body.items.find((item) => item.projectKey === "/fixture/b").configFieldCount, "automatic selection receives config detail counts rather than fixed-size hash lengths");
   const selected = { host: "claude-code", scope: "project", projectKey: "/fixture/b", name: "memory", configHash: before.body.items.find((item) => item.projectKey === "/fixture/b").configHash };
   assert.equal((await request("/api/host-apply", { method: "POST", headers, body: { selections: [{ ...selected, configHash: "stale" }] } })).status, 409);
   const applied = await request("/api/host-apply", { method: "POST", headers, body: { selections: [selected] } });

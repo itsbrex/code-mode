@@ -159,7 +159,8 @@ export function run(opts) {
       opts.sourcesFile,
       manual.name,
       opts.utcpPath,
-      twins.map((o) => ({ host: o.host, scope: o.scope, projectKey: o.projectKey || undefined, name: o.name, fingerprint }))
+      twins.map((o) => ({ host: o.host, scope: o.scope, projectKey: o.projectKey || undefined, name: o.name, fingerprint })),
+      { replace: true }
     );
   }
 

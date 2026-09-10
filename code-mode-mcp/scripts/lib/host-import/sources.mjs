@@ -67,12 +67,12 @@ function saveStore(file, store) {
 }
 const sourceKey = (s) => JSON.stringify([s.host, s.scope, s.projectKey ?? "", s.name ?? ""]);
 
-export function recordSources(file, manualName, utcpPath, sources) {
+export function recordSources(file, manualName, utcpPath, sources, { replace = false } = {}) {
   if (!file || !manualName) return loadSources(file, utcpPath);
   const store = readStore(file);
   const key = resolve(utcpPath);
   const all = own(store.configs, key) ? store.configs[key] : {};
-  const prev = own(all, manualName) ? all[manualName].sources : [];
+  const prev = !replace && own(all, manualName) ? all[manualName].sources : [];
   const merged = new Map(prev.map((s) => [sourceKey(s), s]));
   for (const s of sources) {
     if (!hosts.has(s.host)) throw new Error("Invalid provenance host");

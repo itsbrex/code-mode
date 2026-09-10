@@ -1,5 +1,5 @@
 import { readFileSync, statSync } from "node:fs";
-import { dirname, resolve as resolvePath } from "node:path";
+import { dirname, isAbsolute, resolve as resolvePath } from "node:path";
 import { toManualIdentifier } from "../manual-name.mjs";
 
 // Bridges that must never be federated into code-mode (would route to itself).
@@ -58,7 +58,7 @@ export function isCodeModeBridge(name, server = {}) {
   const env = server.env && typeof server.env === "object" ? server.env : {};
   if ("UTCP_CONFIG_FILE" in env || "UTCP_CONFIG_PATH" in env) return true;
   for (const t of tokens) {
-    if (t.startsWith("/") && scriptLooksLikeBridge(t)) return true;
+    if (isAbsolute(t) && scriptLooksLikeBridge(t)) return true;
   }
   return false;
 }

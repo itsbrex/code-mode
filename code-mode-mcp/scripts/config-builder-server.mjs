@@ -212,7 +212,10 @@ function planItemView(it) {
     // Key-order-independent fingerprint of what would be imported (falls back
     // to the raw server for non-convertible rows) — equal hash + equal name
     // across hosts = a true duplicate the import will merge into one manual.
-    configHash: planItemFingerprint(it)
+    configHash: planItemFingerprint(it),
+    configFieldCount: Object.keys(it.source?.server ?? {}).length +
+      (Array.isArray(it.source?.server?.args) ? it.source.server.args.length : 0) +
+      Object.keys(it.source?.server?.env ?? {}).length + Object.keys(it.source?.server?.headers ?? {}).length
   };
 }
 
@@ -302,7 +305,7 @@ function applyImport(ctx, body) {
       name: o.name,
       fingerprint
     }));
-    recordSources(ctx.sourcesFile, it.manual.name, ctx.configPath, sources);
+    recordSources(ctx.sourcesFile, it.manual.name, ctx.configPath, sources, { replace: true });
     sourcesRecorded[it.manual.name] = [...new Set(sources.map((s) => s.host))];
   }
   return { ...result, sourcesRecorded, harvested };

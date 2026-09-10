@@ -65,3 +65,13 @@ test("corrupt provenance stops import before changing config or host files", (t)
   assert.equal(readFileSync(opts.utcpPath, "utf8"), before);
   assert.match(readFileSync(opts.paths.claudeCode, "utf8"), /fixture-server/);
 });
+
+test("a fresh import replaces orphaned provenance before later ejection", (t) => {
+  const { opts } = fixture(t);
+  recordSources(opts.sourcesFile, "memory", opts.utcpPath, [{ host: "claude-code", scope: "global", name: "memory" }]);
+  writeFileSync(opts.paths.claudeDesktop, '{"mcpServers":{"memory":{"command":"fixture-server"}}}');
+  run({ ...opts, apply: true });
+  assert.deepEqual(loadSources(opts.sourcesFile, opts.utcpPath).memory.sources.map((source) => source.host), ["claude-desktop"]);
+  run({ ...opts, eject: ["memory"] });
+  assert.deepEqual(JSON.parse(readFileSync(opts.paths.claudeCode, "utf8")).mcpServers, {});
+});
