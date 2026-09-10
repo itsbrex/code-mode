@@ -6,7 +6,7 @@ import { readAllHosts, defaultHostPaths } from "./lib/host-import/read-hosts.mjs
 import { buildPlan, selectManuals, readUtcpConfig } from "./lib/host-import/plan.mjs";
 import { addManualsToUtcp, appendHarvestedEnv, stripFromClaudeJson, stripFromCodexToml } from "./lib/host-import/apply.mjs";
 import { loadPins } from "./lib/host-import/pins.mjs";
-import { ejectManuals } from "./lib/host-import/eject.mjs";
+import { ejectManuals, readEjectableManuals } from "./lib/host-import/eject.mjs";
 import { loadSources, recordSources, removeSources, planItemFingerprint } from "./lib/host-import/sources.mjs";
 import dotenv from "dotenv";
 import { resolveUtcpConfigPath } from "../config-path.mjs";
@@ -97,6 +97,7 @@ export function renderPlanText(plan) {
 export function run(opts) {
   if (opts.eject && opts.eject.length) {
     loadSources(opts.sourcesFile, opts.utcpPath);
+    readEjectableManuals(opts.utcpPath, opts.eject);
     if (opts.to) {
       // Explicit --to: one target set for every ejected manual.
       const targets = opts.to.map((host) => ({ host, scope: "global" }));
