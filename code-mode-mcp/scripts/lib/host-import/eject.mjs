@@ -1,8 +1,8 @@
-import { readFileSync, writeFileSync, realpathSync } from "node:fs";
-import { dirname, relative, resolve } from "node:path";
+import { readFileSync, writeFileSync } from "node:fs";
 import { backupFile, pruneBackups } from "./backup.mjs";
 import { manualToHostServer } from "./from-utcp.mjs";
 import { addToClaudeJson, addToCodexToml } from "./host-write.mjs";
+import { destinationFileIdentity } from "./file-identity.mjs";
 
 function stampArgs(opts) {
   return opts.stamp ? [opts.stamp] : [];
@@ -52,19 +52,6 @@ function validateTargets(targets) {
   }
 }
 
-function destinationFile(file) {
-  const absolute = resolve(file);
-  let ancestor = absolute;
-  for (;;) {
-    try { return resolve(realpathSync(ancestor), relative(ancestor, absolute)); }
-    catch (error) {
-      const parent = dirname(ancestor);
-      if (error.code !== "ENOENT" || parent === ancestor) throw error;
-      ancestor = parent;
-    }
-  }
-}
-
 // A shared target array preserves the original API; a per-manual Map lets the
 // CLI route provenance as one batch, with every destination checked up front.
 export function ejectManuals(utcpPath, names, targets, hostPaths, backupRoot, opts = {}) {
@@ -79,7 +66,7 @@ export function ejectManuals(utcpPath, names, targets, hostPaths, backupRoot, op
     validateTargets(routes);
     for (const target of routes) {
       const file = target.host === "codex" ? hostPaths.codex : target.host === "claude-desktop" ? hostPaths.claudeDesktop : hostPaths.claudeCode;
-      const destination = destinationFile(file);
+      const destination = destinationFileIdentity(file);
       const format = target.host === "codex" ? "toml" : "json";
       if (formats.has(destination) && formats.get(destination) !== format) {
         throw new Error("Host formats cannot share an ejection destination file");

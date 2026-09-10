@@ -124,8 +124,9 @@ manuals containing one convertible server can be ejected; other UTCP protocols,
 empty or multi-server MCP manuals, and unsupported target scopes are rejected.
 Provenance routing restores the original host name and project scope. All routes
 are planned as one batch: two selected manuals cannot claim the same resolved
-destination file, scope/project, and raw name. Identical paths and symlink aliases
-are checked together; the same raw name in distinct project scopes stays valid.
+destination file, scope/project, and raw name. Identical paths, existing hard
+links, and symlink aliases (including dangling chains) are checked together;
+the same raw name in distinct project scopes stays valid.
 JSON and TOML hosts cannot share a destination file, even for the same manual.
 Unknown manual names remain a no-op.
 
@@ -181,9 +182,11 @@ nonempty requirement. A requested port of `0` reports the actual assigned port.
 Duplicate identity includes harvested values, so same-named servers with different
 credentials remain separate. Only the chosen source supplies harvested variables;
 strip refuses pinned, changed, or unmatched sources. Provenance schema 2 separates
-entries by absolute UTCP config path and retains raw host names for ejection.
-Legacy provenance is scoped to its recorded path when read, then migrated on an
-explicit write. Corrupt provenance stops the operation. Sidecar writes are atomic
+entries by canonical, symlink-resolved UTCP config path and retains raw host names
+for ejection. This path identity survives atomic replacement of the config file.
+Legacy and version-2 alias keys normalize in memory on read and persist only on
+an explicit write. Conflicting entries for the same config/manual fail before
+mutation rather than choosing a source. Corrupt provenance stops the operation. Sidecar writes are atomic
 and use private file permissions.
 
 Tests use temporary synthetic host/config files and a fake credential executable.

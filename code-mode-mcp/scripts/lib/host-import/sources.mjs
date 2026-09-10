@@ -1,6 +1,7 @@
 import { lstatSync, readFileSync, writeFileSync, renameSync, unlinkSync } from "node:fs";
 import { resolve } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
+import { canonicalFilePath } from "./file-identity.mjs";
 
 const own = (value, key) => Object.hasOwn(value, key);
 const object = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
@@ -30,9 +31,12 @@ function readStore(file) {
       configs[key][name] = entry;
     }
   } else throw new Error("Unsupported provenance format");
+  const canonical = Object.create(null);
   for (const [config, entries] of Object.entries(configs)) {
     if (resolve(config) !== config || !object(entries)) throw new Error("Invalid provenance config");
-    for (const entry of Object.values(entries)) {
+    const key = canonicalFilePath(config);
+    if (!own(canonical, key)) canonical[key] = Object.create(null);
+    for (const [name, entry] of Object.entries(entries)) {
       if (!object(entry) || !Array.isArray(entry.sources)) throw new Error("Invalid provenance sources");
       for (const source of entry.sources) {
         if (!object(source) || !hosts.has(source.host) || !["global", "project"].includes(source.scope) ||
@@ -40,9 +44,17 @@ function readStore(file) {
           (source.name !== undefined && (typeof source.name !== "string" || !source.name.trim())) ||
           (source.fingerprint !== undefined && !/^[a-f0-9]{64}$/.test(source.fingerprint))) throw new Error("Invalid provenance source");
       }
+      if (own(canonical[key], name)) {
+        const signature = (sources) => JSON.stringify(sources.map(stableStringify).sort());
+        if (signature(canonical[key][name].sources) !== signature(entry.sources)) {
+          throw new Error("Conflicting provenance aliases for the same UTCP config");
+        }
+      } else canonical[key][name] = { ...entry, utcpPath: key };
     }
   }
-  return { schemaVersion: 2, configs };
+  return { schemaVersion: 2, configs: Object.fromEntries(
+    Object.entries(canonical).map(([key, entries]) => [key, { ...entries }])
+  ) };
 }
 
 export function loadSources(file, utcpPath) {
@@ -52,7 +64,7 @@ export function loadSources(file, utcpPath) {
     if (values.length > 1) throw new Error("Select a UTCP config when reading provenance");
     return values[0] ?? {};
   }
-  const key = resolve(utcpPath);
+  const key = canonicalFilePath(utcpPath);
   return own(store.configs, key) ? store.configs[key] : {};
 }
 
@@ -70,7 +82,7 @@ const sourceKey = (s) => JSON.stringify([s.host, s.scope, s.projectKey ?? "", s.
 export function recordSources(file, manualName, utcpPath, sources, { replace = false } = {}) {
   if (!file || !manualName) return loadSources(file, utcpPath);
   const store = readStore(file);
-  const key = resolve(utcpPath);
+  const key = canonicalFilePath(utcpPath);
   const all = own(store.configs, key) ? store.configs[key] : {};
   const prev = !replace && own(all, manualName) ? all[manualName].sources : [];
   const merged = new Map(prev.map((s) => [sourceKey(s), s]));
@@ -89,7 +101,7 @@ export function recordSources(file, manualName, utcpPath, sources, { replace = f
 
 export function removeSources(file, manualNames, utcpPath) {
   const store = readStore(file);
-  const key = utcpPath ? resolve(utcpPath) : Object.keys(store.configs).length === 1 ? Object.keys(store.configs)[0] : undefined;
+  const key = utcpPath ? canonicalFilePath(utcpPath) : Object.keys(store.configs).length === 1 ? Object.keys(store.configs)[0] : undefined;
   if (!key) {
     if (Object.keys(store.configs).length) throw new Error("Select a UTCP config when removing provenance");
     return {};

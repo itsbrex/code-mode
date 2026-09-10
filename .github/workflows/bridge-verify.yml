@@ -20,7 +20,8 @@ jobs:
       - name: Install parser dependencies without native install scripts
         working-directory: code-mode-mcp
         run: npm ci --ignore-scripts
-      - run: node --test code-mode-mcp/tests/host-import-bridge-detect.test.mjs
+      - name: Verify bridge and ejection paths on Windows
+        run: node --test code-mode-mcp/tests/host-import-bridge-detect.test.mjs code-mode-mcp/tests/host-import-eject-boundaries.test.mjs
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 15
