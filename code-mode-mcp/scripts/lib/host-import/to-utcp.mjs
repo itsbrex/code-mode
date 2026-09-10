@@ -1,6 +1,7 @@
 import { readFileSync, statSync } from "node:fs";
 import { dirname, isAbsolute, resolve as resolvePath } from "node:path";
 import { toManualIdentifier } from "../manual-name.mjs";
+import { relativeImports } from "./relative-imports.mjs";
 
 // Bridges that must never be federated into code-mode (would route to itself).
 export const DENYLIST = new Set(["code-mode", "code-mode-mcp", "attio-code-mode", "attio-code-mode-mcp"]);
@@ -19,7 +20,6 @@ export const DENYLIST = new Set(["code-mode", "code-mode-mcp", "attio-code-mode"
 //      registration in a sibling module). Catches forks living in repos
 //      whose path says nothing.
 const BRIDGE_MARKERS = /call_tool_chain|@utcp\/code-mode|CodeModeUtcpClient/;
-const RELATIVE_SPEC = /\b(?:from\s+|import\s*(?:\(\s*)?|(require)\s*\(\s*)["'](\.\.?(?:\/[^"']*)?)["']/g;
 const bridgeProbeCache = new Map();
 function readSmallFile(p) {
   try {
@@ -75,12 +75,10 @@ function scriptLooksLikeBridge(p) {
   if (fileLooksLikeBridge(p)) return true;
   const text = readSmallFile(p);
   if (text === null) return false;
-  let followed = 0;
-  for (const m of text.matchAll(RELATIVE_SPEC)) {
-    if (++followed > 16) break;
-    const relative = resolvePath(dirname(p), m[2]);
-    const directoryOnly = /(?:^|[\\/])\.\.?$|[\\/]$/.test(m[2]);
-    const candidate = m[1] ? commonJsProbePath(relative, directoryOnly) : relative;
+  for (const { specifier, commonjs } of relativeImports(text)) {
+    const relative = resolvePath(dirname(p), specifier);
+    const directoryOnly = /(?:^|[\\/])\.\.?$|[\\/]$/.test(specifier);
+    const candidate = commonjs ? commonJsProbePath(relative, directoryOnly) : relative;
     if (candidate && fileLooksLikeBridge(candidate)) return true;
   }
   return false;

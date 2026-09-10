@@ -60,6 +60,37 @@ test("bridge probing follows bare, dynamic, and CommonJS relative imports", (t) 
   }
 });
 
+test("bridge probing parses literal import syntax instead of matching source text", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "brdg-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const entry = join(root, "entry.mjs");
+  writeFileSync(join(root, "bridge.js"), 'registerTool("call_tool_chain");');
+  for (const source of [
+    'require(`./bridge.js`);', 'await import(`./bridge.js`);',
+    'require("./bridge\\u002Ejs");', 'require /* comment */ ("./bridge.js");',
+    'export * from "./bridge.js";', 'import type { Item } from "./plain.js"; import bridge = require("./bridge.js");',
+    'const view = <span />; await import(`./bridge.js`);',
+  ]) {
+    writeFileSync(entry, source);
+    assert.equal(isCodeModeBridge("fixture", { command: "node", args: [entry] }), true, source);
+  }
+});
+
+test("bridge probing ignores comment/string decoys and evaluated template imports", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "brdg-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const entry = join(root, "entry.mjs");
+  writeFileSync(join(root, "bridge.js"), 'registerTool("call_tool_chain");');
+  for (const source of [
+    '// require("./bridge.js");',
+    `const example = ${JSON.stringify('require("./bridge.js")')};`,
+    'const name = "bridge"; import(`./${name}.js`);',
+  ]) {
+    writeFileSync(entry, source);
+    assert.equal(isCodeModeBridge("fixture", { command: "node", args: [entry] }), false, source);
+  }
+});
+
 test("CommonJS bridge probing resolves extensionless files and directory entrypoints without execution", (t) => {
   const root = mkdtempSync(join(tmpdir(), "brdg-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));

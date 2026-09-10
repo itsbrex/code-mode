@@ -139,7 +139,12 @@ code-mode wire markers (`call_tool_chain`, `@utcp/code-mode`,
 panel, cannot be selected, are never migrated, and strip requests against
 them are refused server-side even when their name matches a federated manual.
 Relative imports include side-effect imports, literal dynamic imports, and
-CommonJS `require` calls. Replacing an entry or imported module invalidates its
+CommonJS `require` calls. A pinned Babel parser reads JavaScript/TypeScript/JSX
+syntax, including escaped strings and template literals without substitutions;
+comments and quoted examples do not become imports. Computed expressions are not
+evaluated. At most 16 literal relative imports are followed, one module level;
+unsupported or incomplete source is not a complete dependency graph.
+Replacing an entry or imported module invalidates its
 cached bridge result on the next scan.
 Relative CommonJS calls also resolve extensionless files, package `main`, and
 directory index files in Node's file/main/index order. Resolution reads bounded
