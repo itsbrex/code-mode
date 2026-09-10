@@ -87,7 +87,7 @@ never re-added. Backups live under `~/.host-import-backups/<timestamp>/` (FIFO, 
 The same server name can exist on several hosts. Two cases:
 
 - **Identical config** (key-order-independent comparison of the converted
-  manual): a true duplicate. Import writes ONE manual and records **every**
+  manual and harvested credential values): a true duplicate. Import writes ONE manual and records **every**
   source host in `~/.host-import-sources.json` (override with
   `--sources-file`). The UTCP client config schema is strict, so provenance
   lives in this sidecar rather than inside the UTCP config.
@@ -119,6 +119,12 @@ a standard MCP server entry (un-wrapping `mcp-remote` back to a `url`/`http`
 server), writes it into each target host, and removes the manual from the UTCP
 config. All writes are backed up.
 
+The entire selection is checked before any destination is written. Only MCP
+manuals containing one convertible server can be ejected; other UTCP protocols,
+empty or multi-server MCP manuals, and unsupported target scopes are rejected.
+Provenance routing restores the original host name and project scope. Unknown
+manual names remain a no-op.
+
 ## Bridge auto-detection
 
 Bridge instances registered under arbitrary names (brandjet-style forks,
@@ -126,11 +132,15 @@ Bridge instances registered under arbitrary names (brandjet-style forks,
 tiers cheapest-first: exact-name denylist; command/args mentioning
 `code-mode`/`code_mode` or a `UTCP_CONFIG_FILE`/`UTCP_CONFIG_PATH` env var;
 finally a content probe that reads absolute script paths from command/args
-(≤8MB, cached, relative imports followed one level) and scans for the
+(≤8MB, cached by file identity and modification metadata, relative imports
+followed one level) and scans for the
 code-mode wire markers (`call_tool_chain`, `@utcp/code-mode`,
 `CodeModeUtcpClient`). Detected bridges show a `bridge` badge in the web
 panel, cannot be selected, are never migrated, and strip requests against
 them are refused server-side even when their name matches a federated manual.
+Relative imports include side-effect imports, literal dynamic imports, and
+CommonJS `require` calls. Replacing an entry or imported module invalidates its
+cached bridge result on the next scan.
 
 ## What it does NOT do
 - It does not import code-mode bridges into themselves (denylisted or
@@ -143,8 +153,14 @@ them are refused server-side even when their name matches a federated manual.
 The local config builder binds only to loopback and requires an exact local Host,
 Origin, and session token for writes. Import selections include the configuration
 digest shown during review; a changed source returns HTTP 409 before any write.
+Row identities encode host, scope, project, and name as a tuple, so separator
+characters in names cannot select another row.
 Importing the server module does not launch discovery or load credentials.
 Credential tooling retains its default output masking.
+
+An empty `manual_call_templates: []` starts the config builder for a first import;
+the config still passes schema validation. Other discovery callers keep their
+nonempty requirement. A requested port of `0` reports the actual assigned port.
 
 Duplicate identity includes harvested values, so same-named servers with different
 credentials remain separate. Only the chosen source supplies harvested variables;
