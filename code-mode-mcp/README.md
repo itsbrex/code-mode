@@ -1,7 +1,7 @@
 # UTCP Code Mode MCP
 
 Expose `@utcp/code-mode` through MCP as the private Local Bridge
-`@itsbrex/code-mode-mcp` (v1.3.1, MIT). The package is not published.
+`@itsbrex/code-mode-mcp` (v1.4.0, MIT). The package is not published.
 
 This server keeps the same execution model as `CodeModeUtcpClient`:
 
