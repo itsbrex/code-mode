@@ -16,7 +16,7 @@ code-mode/
   .claude/rules/        # Claude project rules
 ```
 
-No root package.json — each sub-project is independent (no npm/pnpm workspaces).
+The root `package.json` only carries the `plans` script (`bun run plans`, see `scripts/plans.mjs`). It is not a workspace — each sub-project is independent (no npm/pnpm workspaces).
 
 ## Sub-Projects
 
@@ -54,7 +54,7 @@ pytest
 
 ### MCP Server (`code-mode-mcp/`)
 
-- **Package**: private local bridge `@itsbrex/code-mode-mcp` v1.3.0
+- **Package**: private local bridge `@itsbrex/code-mode-mcp` v1.4.0
 - **License**: MIT (differs from root MPL-2.0)
 - **Binary**: `code-mode-mcp` → `dist/index.js`
 - **Build**: `tsc`
