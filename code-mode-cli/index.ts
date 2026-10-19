@@ -82,6 +82,10 @@ directory, then running \`utcp\` against it. Minimal example:
   ]
 }
 
+An \`mcp\` manual's server entry needs an explicit \`"transport"\`: \`"stdio"\` for a
+\`command\`, \`"http"\` for a \`url\`. Without it registration fails with
+"Unsupported MCP transport: 'undefined'".
+
 ### Workflow
 1. Write \`.utcp_config.json\` with the manuals (APIs / MCP servers / CLIs) you need.
 2. \`utcp validate\` to confirm the config + manuals are well-formed and that
@@ -110,6 +114,13 @@ directory, then running \`utcp\` against it. Minimal example:
 ### Authentication
 - API key / basic / OAuth2 client-credentials: put values (or \`\${VAR}\` refs) in the
   manual's \`auth\` block; provide \`\${VAR}\` values via the \`.env\` dotenv loader.
+- **On an \`http\` (OpenAPI) manual, repeat that block as \`auth_tools\`.** \`auth\`
+  authenticates only the spec fetch; the converter copies \`auth_tools\` onto each
+  generated tool. With \`auth\` alone the spec loads, every tool registers, and every
+  call goes out unauthenticated — the API answers 401 as if the credential were bad.
+- \`\${VAR}\` is resolved per manual: inside manual \`m\` it looks up \`m_VAR\` first,
+  and an underscore in the manual name doubles (\`keep_rest\` -> \`keep__rest_VAR\`).
+  Define the namespaced name in \`.env\`, or \`variables\` in the config.
 - Interactive sign-in (user opens a page): declare an \`oauth2_user\` auth block:
     "auth": { "auth_type": "oauth2_user", "access_token": "\${MY_TOKEN}",
               "grant_type": "device_code",

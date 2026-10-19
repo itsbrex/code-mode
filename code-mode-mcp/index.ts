@@ -37,6 +37,13 @@ import {
 } from "./tool-exclusion.js";
 
 export * from "./tool-exclusion.js";
+import {
+  normalizeManualCallTemplate,
+  normalizeUtcpConfig
+} from "./utcp-normalize.js";
+export * from "./utcp-normalize.js";
+import { buildVariableAliases } from "./utcp-variable-aliases.js";
+export * from "./utcp-variable-aliases.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -606,7 +613,14 @@ export function getCanonicalToolDefinitions(
           exclusionRegistry,
           input.manual_call_template as Record<string, unknown>
         );
-        const result = await client.registerManual(sanitizedTemplate as any);
+        // Same normalization the config path gets: a template registered at
+        // runtime hits the identical @utcp/* 1.1.x requirements.
+        const { value: normalizedTemplate, changes: templateChanges } =
+          normalizeManualCallTemplate(sanitizedTemplate as Record<string, unknown>);
+        if (templateChanges.length > 0) {
+          console.warn(`[code-mode] normalized register_manual: ${templateChanges.join("; ")}`);
+        }
+        const result = await client.registerManual(normalizedTemplate as any);
         return {
           content: [{ type: "text", text: JSON.stringify(result) }]
         };
@@ -1008,8 +1022,27 @@ async function initializeUtcpClient(): Promise<CodeModeUtcpClient> {
     }
   }
 
-  const { registry, sanitizedConfig } = buildExclusionRegistryFromConfig(rawConfig);
+  // Fill in fields @utcp/* 1.1.x requires but generators commonly omit
+  // (mcp `transport`, http `auth_tools`) — see utcp-normalize.ts.
+  const { value: normalizedConfig, changes: normalizationChanges } = normalizeUtcpConfig(rawConfig);
+  if (normalizationChanges.length > 0) {
+    console.warn(`[code-mode] normalized ${configPath}: ${normalizationChanges.join("; ")}`);
+  }
+
+  const { registry, sanitizedConfig } = buildExclusionRegistryFromConfig(normalizedConfig);
   exclusionRegistry = registry;
+
+  // UTCP looks up a manual's ${VAR} under a namespaced key; alias the bare name
+  // from .env / the environment when only that spelling exists.
+  const aliases = await buildVariableAliases(sanitizedConfig as Record<string, unknown>, scriptDir);
+  if (aliases.notes.length > 0) {
+    (sanitizedConfig as Record<string, unknown>).variables = {
+      ...(((sanitizedConfig as Record<string, any>).variables ?? {}) as Record<string, string>),
+      ...aliases.variables
+    };
+    console.warn(`[code-mode] aliased variables: ${aliases.notes.join("; ")}`);
+  }
+
   const clientConfig = new UtcpClientConfigSerializer().validateDict(sanitizedConfig) as UtcpClientConfig;
   utcpClient = await CodeModeUtcpClient.create(scriptDir, clientConfig);
   exclusionAwareClient = createCleanToolNameClient(utcpClient, exclusionRegistry);

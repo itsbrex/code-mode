@@ -6,6 +6,8 @@ import path from 'path';
 import { promises as fs } from 'fs';
 import { UtcpClientConfigSerializer, ensureCorePluginsInitialized } from '@utcp/sdk';
 import { CodeModeUtcpClient } from '@utcp/code-mode';
+import { normalizeUtcpConfig } from './normalize.js';
+import { buildVariableAliases } from './variable-aliases.js';
 
 export interface ResolvedClient {
   client: CodeModeUtcpClient;
@@ -13,7 +15,7 @@ export interface ResolvedClient {
   configPath: string;
   /** Directory the client resolves relative paths and secrets (.env) against. */
   scriptDir: string;
-  /** The raw, un-substituted config object as read from disk. */
+  /** The un-substituted config object from disk, after normalization. */
   rawConfig: Record<string, unknown>;
 }
 
@@ -64,12 +66,30 @@ export async function createClient(
     }
   }
 
+  // Fill in fields @utcp/* 1.1.x requires but generators commonly omit
+  // (mcp `transport`, http `auth_tools`) — see src/normalize.ts.
+  const { config: normalizedConfig, changes } = normalizeUtcpConfig(rawConfig);
+  if (changes.length > 0) {
+    process.stderr.write(`[code-mode] normalized ${configPath}: ${changes.join('; ')}\n`);
+  }
+
+  // UTCP looks up a manual's ${VAR} under a namespaced key; alias the bare name
+  // from .env / the environment when only that spelling exists.
+  const aliases = await buildVariableAliases(normalizedConfig, scriptDir);
+  if (aliases.notes.length > 0) {
+    (normalizedConfig as Record<string, unknown>).variables = {
+      ...((normalizedConfig as any).variables ?? {}),
+      ...aliases.variables,
+    };
+    process.stderr.write(`[code-mode] aliased variables: ${aliases.notes.join('; ')}\n`);
+  }
+
   // Validate (and optionally strip manuals so the caller can register them
   // one-by-one and capture per-manual results).
   const configForClient = opts.skipManualRegistration
-    ? { ...rawConfig, manual_call_templates: [] }
-    : rawConfig;
+    ? { ...normalizedConfig, manual_call_templates: [] }
+    : normalizedConfig;
   const clientConfig = new UtcpClientConfigSerializer().validateDict(configForClient);
   const client = await CodeModeUtcpClient.create(scriptDir, clientConfig);
-  return { client, configPath, scriptDir, rawConfig };
+  return { client, configPath, scriptDir, rawConfig: normalizedConfig };
 }

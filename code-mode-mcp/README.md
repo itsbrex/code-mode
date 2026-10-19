@@ -86,6 +86,15 @@ Example `.utcp_config.json`:
 }
 ```
 
+**Two fields that are easy to miss.** An `mcp` manual's server entry needs an
+explicit `"transport"` (`"stdio"` for a `command`, `"http"` for a `url`), or
+registration fails with `Unsupported MCP transport: 'undefined'`. An `http`
+(OpenAPI) manual that has an `auth` block needs the same block repeated as
+`auth_tools`: `auth` authenticates only the spec fetch, while `auth_tools` is
+what the converter copies onto each generated tool — with `auth` alone every
+call goes out unauthenticated and the API answers 401. The CLI and the bridge
+fill both in when they can, and say so on stderr.
+
 ### Protocol plugins
 
 Each `call_template_type` (`http`, `text`, `mcp`, `cli`, `file`, plus the
